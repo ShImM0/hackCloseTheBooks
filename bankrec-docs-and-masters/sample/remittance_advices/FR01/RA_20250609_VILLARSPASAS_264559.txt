@@ -1,0 +1,15 @@
+From: cuentas.pagar@villarspasas.example
+To: cobros@valtermia.example
+Date: Mon, 09 Jun 2025 09:35:00 +0100
+Subject: Payment advice 250609551016
+
+Hello,
+
+Please be advised that we have sent a payment of 7,624.42 EUR on 06/09/2025 covering:
+
+  FA250216283        13/05/25        1,134.62
+  FA250215448        06/05/25        3,466.63
+  FA250217566        22/05/25        3,023.17
+
+Kind regards,
+Villar Spa SAS

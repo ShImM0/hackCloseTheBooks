@@ -1,0 +1,15 @@
+From: cuentas.pagar@saneamientos.example
+To: cobros@valtermia.example
+Date: Tue, 03 Jun 2025 09:54:00 +0100
+Subject: Aviso de pago 250603566139
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 1.537,44 EUR con fecha 03/06/2025 que liquida los siguientes documentos:
+
+  FV25-0409711       23/04/25          796,28
+  FV25-0409649       22/04/25        1.482,32
+  AB25-0400297       14/05/25         -741,16
+
+Saludos cordiales,
+Saneamientos Domínguez 2000 S.L.U.

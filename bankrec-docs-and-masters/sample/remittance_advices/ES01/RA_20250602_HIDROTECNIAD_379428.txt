@@ -1,0 +1,21 @@
+From: cuentas.pagar@hidrotecniad.example
+To: cobros@valtermia.example
+Date: Mon, 02 Jun 2025 09:48:00 +0100
+Subject: Aviso de pago 250602489708
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 16.117,42 EUR con fecha 02/06/2025 que liquida los siguientes documentos:
+
+  FV25-0207082       01/04/25        1.959,92
+  FV25-0205889       20/03/25        2.847,31
+  FV25-0207258       03/04/25        3.543,36
+  FV25-0206426       27/03/25          330,22
+  FV25-0204998       10/03/25          268,55
+  FV25-0204541       04/03/25        4.040,31
+  FV25-0208097       14/04/25          489,61
+  FV25-0205123       11/03/25        1.405,21
+  FV25-0208313       17/04/25        1.232,93
+
+Saludos cordiales,
+Hidrotecnia Delta

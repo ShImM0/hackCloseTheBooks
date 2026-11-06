@@ -1,0 +1,17 @@
+From: cuentas.pagar@portaurèlesp.example
+To: cobros@valtermia.example
+Date: Mon, 30 Jun 2025 09:50:00 +0100
+Subject: Payment advice 250625310233
+
+Hello,
+
+Please be advised that we have sent a payment of 16,858.78 EUR on 06/25/2025 covering:
+
+  FA250214453        30/04/25        7,072.30
+  FA250214743        02/05/25        4,546.37
+  FA250215949        09/05/25        1,118.33
+  FA250214652        02/05/25        1,517.05
+  FA250217046        19/05/25        2,604.73
+
+Kind regards,
+Port-Aurèle Spa SARL

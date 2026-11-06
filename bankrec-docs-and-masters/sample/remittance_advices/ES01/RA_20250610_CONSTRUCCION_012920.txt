@@ -1,0 +1,28 @@
+From: cuentas.pagar@construccion.example
+To: cobros@valtermia.example
+Date: Tue, 10 Jun 2025 09:53:00 +0100
+Subject: Aviso de pago 250602798923
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 43.371,38 EUR con fecha 02/06/2025 que liquida los siguientes documentos:
+
+  FV25-0104614       11/03/25        2.962,87
+  FV25-0105396       21/03/25        1.372,61
+  FV25-0104866       14/03/25        3.614,09
+  FV25-0105912       31/03/25       13.115,60
+  FV25-0107663       21/04/25        1.234,32
+  FV25-0105144       19/03/25        4.017,16
+  FV25-0107174       14/04/25        1.518,25
+  FV25-0105559       25/03/25        3.005,95
+  FV25-0104571       11/03/25        1.182,84
+  FV25-0105805       28/03/25          455,48
+  FV25-0107286       15/04/25        1.394,09
+  FV25-0107216       14/04/25          997,67
+  FV25-0109294       09/05/25        1.654,59
+  FV25-0107252       15/04/25          505,70
+  FV25-0107916       24/04/25        1.743,07
+  FV25-0106330       01/04/25        4.597,09
+
+Saludos cordiales,
+Construcciones Vicente S.L.

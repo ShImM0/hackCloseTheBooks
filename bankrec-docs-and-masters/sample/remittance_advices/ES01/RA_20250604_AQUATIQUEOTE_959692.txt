@@ -1,0 +1,28 @@
+From: cuentas.pagar@aquatiqueote.example
+To: cobros@valtermia.example
+Date: Wed, 04 Jun 2025 09:03:00 +0100
+Subject: Payment advice 2579002966
+
+Hello,
+
+Please be advised that we have sent a payment of 46,500.48 EUR on 06/02/2025 covering:
+
+  FV25-0314493       29/05/25          990.27  -9.90 DISCOUNT
+  FV25-0313888       22/05/25        1,524.85  -15.25 DISCOUNT
+  FV25-0313662       21/05/25          818.28  -8.18 DISCOUNT
+  FV25-0314761       30/05/25          859.18  -8.59 DISCOUNT
+  FV25-0314695       30/05/25        8,856.69  -88.57 DISCOUNT
+  FV25-0312690       12/05/25        4,492.75
+  FV25-0313340       16/05/25          666.02  -6.66 DISCOUNT
+  FV25-0312967       14/05/25          729.53
+  FV25-0313046       14/05/25        2,219.32
+  FV25-0313647       21/05/25        3,336.47  -33.36 DISCOUNT
+  FV25-0313891       22/05/25       16,705.81  -167.06 DISCOUNT
+  FV25-0312876       13/05/25          989.47
+  FV25-0312725       12/05/25        1,435.87  -14.36 DISCOUNT
+  FV25-0312803       13/05/25        2,091.24
+  FV25-0313785       22/05/25        1,781.85  -17.82 DISCOUNT
+  AB25-0300374       26/05/25         -627.37
+
+Kind regards,
+Aquatique Otero SARL

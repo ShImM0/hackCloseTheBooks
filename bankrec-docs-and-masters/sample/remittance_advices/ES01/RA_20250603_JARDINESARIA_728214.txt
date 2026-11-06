@@ -1,0 +1,16 @@
+From: cuentas.pagar@jardinesaria.example
+To: cobros@valtermia.example
+Date: Tue, 03 Jun 2025 09:30:00 +0100
+Subject: Aviso de pago 250602168137
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 15.374,45 EUR con fecha 02/06/2025 que liquida los siguientes documentos:
+
+  FV25-0504522       10/03/25          615,76
+  FV25-0504214       05/03/25        1.121,83
+  FV25-0504708       12/03/25        9.884,21
+  FV25-0505868       28/03/25        3.752,65
+
+Saludos cordiales,
+Jardines Arias Pro S.L.U.

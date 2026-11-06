@@ -1,0 +1,14 @@
+From: cuentas.pagar@climatizació.example
+To: cobros@valtermia.example
+Date: Tue, 17 Jun 2025 09:42:00 +0100
+Subject: Aviso de pago 250618564235
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 6.201,35 EUR con fecha 18/06/2025 que liquida los siguientes documentos:
+
+  FV25-0208022       14/04/25        5.780,75
+  FV25-0208341       17/04/25          420,60
+
+Saludos cordiales,
+Climatización Pardo Group S.Coop.

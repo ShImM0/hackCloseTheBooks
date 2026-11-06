@@ -1,0 +1,22 @@
+category,description,gl_account
+BANK_FEES,Comisiones y gastos bancarios,626000
+INTEREST_INCOME,Intereses a favor,769000
+INTEREST_EXPENSE,Intereses de deudas / descubiertos,662000
+PAYROLL,Nóminas (remesa de transferencias),465000
+SOCIAL_SECURITY,Seguridad social / cargas sociales,476000
+TAX_PAYMENT,"Impuestos (IVA, retenciones, sociedades)",475000
+TAX_REFUND,Devolución de impuestos,470000
+LOAN_DRAWDOWN,Disposición de préstamo / póliza,520000
+LOAN_REPAYMENT,Cuota de préstamo (capital + intereses),520000
+LEASING,Cuota de leasing / renting financiero,524000
+FX_DEAL,Compraventa de divisa / liquidación de forward,572900
+CASH_POOL,Barrido de cash pooling (cabecera ↔ filial),552000
+INTERCOMPANY,Transferencia intragrupo (no comercial),551000
+INTERNAL_TRANSFER,Traspaso entre cuentas propias de la misma sociedad,572900
+CUSTOMER_ADVANCE,Anticipo de cliente sin factura (p. ej. pago de proforma),438000
+CUSTOMER_REFUND,Devolución de dinero a cliente (saldo a favor),430000
+SUPPLIER_REFUND,Reembolso de proveedor sin abono asociado (p. ej. pago duplicado nuestro),400000
+CARD_EXPENSES,Liquidación de tarjetas de empresa,410900
+INSURANCE,Primas de seguros,625000
+BANK_REVERSAL,Apunte erróneo del banco y su anulación,572900
+UNIDENTIFIED,Cobro no identificado (no existe partida),554000

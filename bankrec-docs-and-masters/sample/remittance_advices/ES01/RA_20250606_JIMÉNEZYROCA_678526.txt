@@ -1,0 +1,20 @@
+From: cuentas.pagar@jiménezyroca.example
+To: cobros@valtermia.example
+Date: Fri, 06 Jun 2025 09:28:00 +0100
+Subject: Aviso de pago 250606947938
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 19.595,38 EUR con fecha 06/06/2025 que liquida los siguientes documentos:
+
+  FV25-0507763       22/04/25          665,91
+  FV25-0507995       24/04/25          665,33
+  FV25-0508170       28/04/25        3.953,24
+  FV24-0519362       28/10/24        1.593,13
+  FV25-0504410       07/03/25        1.668,74
+  FV25-0508226       29/04/25        6.544,02
+  FV25-0508291       29/04/25        1.836,32
+  FV25-0501001       16/01/25        2.668,69
+
+Saludos cordiales,
+Jiménez y Roca Spa S.L.U.

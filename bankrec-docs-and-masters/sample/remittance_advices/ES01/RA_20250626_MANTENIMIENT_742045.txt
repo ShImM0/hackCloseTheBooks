@@ -1,0 +1,14 @@
+From: cuentas.pagar@mantenimient.example
+To: cobros@valtermia.example
+Date: Thu, 26 Jun 2025 09:50:00 +0100
+Subject: Aviso de pago 250625564490
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 9.086,18 EUR con fecha 25/06/2025 que liquida los siguientes documentos:
+
+  FV25-0206298       26/03/25        5.014,58
+  FV25-0207416       04/04/25        4.071,60
+
+Saludos cordiales,
+Mantenimientos Herrero Pro S.L.

@@ -1,0 +1,22 @@
+From: cuentas.pagar@instalacione.example
+To: cobros@valtermia.example
+Date: Thu, 26 Jun 2025 09:19:00 +0100
+Subject: Aviso de pago 250625661511
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 24.536,39 EUR con fecha 25/06/2025 que liquida los siguientes documentos:
+
+  FV25-0405445       11/03/25        3.147,40
+  FV25-0406471       21/03/25        1.383,37
+  FV25-0406265       19/03/25        3.243,48
+  FV25-0404617       03/03/25        1.763,90
+  FV25-0408207       07/04/25        5.665,23
+  FV25-0408219       07/04/25          983,90
+  FV25-0408460       09/04/25          746,09
+  FV25-0406081       18/03/25        4.158,00
+  FV25-0408298       08/04/25        1.070,66
+  FV25-0405755       13/03/25        2.374,36
+
+Saludos cordiales,
+Instalaciones Peñaserena S.L.

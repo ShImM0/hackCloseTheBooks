@@ -1,0 +1,19 @@
+From: cuentas.pagar@suministrosp.example
+To: cobros@valtermia.example
+Date: Thu, 12 Jun 2025 09:57:00 +0100
+Subject: Aviso de pago 2053001440
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 65.898,47 EUR con fecha 04/06/2025 que liquida los siguientes documentos:
+
+  FV25-0404258       27/02/25        8.819,45
+  FV25-0404320       28/02/25        6.110,46
+  FV25-0404750       03/03/25        2.203,48
+  FV25-0404995       05/03/25       44.569,62
+  FV25-0405396       10/03/25        4.790,72
+  FV25-0405363       10/03/25        3.555,68
+  AB25-0400345       02/06/25       -4.150,94
+
+Saludos cordiales,
+Suministros Pacific S.A.

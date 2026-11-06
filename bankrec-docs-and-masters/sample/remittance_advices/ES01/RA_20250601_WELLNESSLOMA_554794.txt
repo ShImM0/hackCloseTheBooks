@@ -1,0 +1,17 @@
+From: cuentas.pagar@wellnessloma.example
+To: cobros@valtermia.example
+Date: Sun, 01 Jun 2025 09:57:00 +0100
+Subject: Aviso de pago 8826052962
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 37.535,02 EUR con fecha 29/05/2025 que liquida los siguientes documentos:
+
+  FV25-0201615       28/01/25        5.708,49
+  FV25-0202757       11/02/25        1.571,20
+  FV25-0203489       20/02/25       19.132,13
+  FV25-0203562       21/02/25        2.149,67
+  FV25-0204530       04/03/25        8.973,53
+
+Saludos cordiales,
+Wellness Lomaseca S.A.

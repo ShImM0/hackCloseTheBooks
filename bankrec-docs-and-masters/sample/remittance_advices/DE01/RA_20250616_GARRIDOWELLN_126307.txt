@@ -1,0 +1,18 @@
+From: cuentas.pagar@garridowelln.example
+To: cobros@valtermia.example
+Date: Mon, 16 Jun 2025 09:41:00 +0100
+Subject: Payment advice 250616184619
+
+Hello,
+
+Please be advised that we have sent a payment of 41,716.97 EUR on 06/16/2025 covering:
+
+  RE250104206        10/03/25        3,974.09
+  RE250108406        05/05/25        2,723.89
+  RE250108578        06/05/25       10,962.89
+  RE250108049        02/05/25        4,667.10
+  RE250109325        16/05/25        4,281.87
+  RE250110054        27/05/25       15,107.13
+
+Kind regards,
+Garrido Wellness GmbH & Co. KG

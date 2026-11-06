@@ -1,0 +1,14 @@
+From: cuentas.pagar@slssuministr.example
+To: cobros@valtermia.example
+Date: Wed, 25 Jun 2025 09:57:00 +0100
+Subject: Aviso de pago 250625163027
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 4.258,27 EUR con fecha 25/06/2025 que liquida los siguientes documentos:
+
+  FV25-0507961       24/04/25        2.829,09
+  FV25-0508860       05/05/25        1.429,18
+
+Saludos cordiales,
+SLS Suministros S.Coop.

@@ -1,0 +1,26 @@
+From: cuentas.pagar@arenaldelsur.example
+To: cobros@valtermia.example
+Date: Wed, 25 Jun 2025 09:42:00 +0100
+Subject: Aviso de pago 250625964386
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 14.922,81 EUR con fecha 25/06/2025 que liquida los siguientes documentos:
+
+  FV25-0108042       25/04/25          286,62
+  FV25-0106510       03/04/25          373,93
+  FV25-0107947       24/04/25        1.515,91
+  FV25-0107857       23/04/25          272,36
+  AB25-0100209       30/04/25         -136,17
+  FV25-0109139       08/05/25          611,80
+  FV25-0104545       11/03/25        1.291,55
+  FV25-0109443       12/05/25          150,60
+  FV25-0106631       04/04/25        2.760,63
+  FV25-0101052       17/01/25        3.839,77
+  FV25-0109915       19/05/25          250,92
+  FV25-0108128       28/04/25        3.358,72
+  FV25-0105173       19/03/25          218,78
+  FV25-0107358       16/04/25          127,39
+
+Saludos cordiales,
+Arenal del Sur Mantenimientos S.L.U.

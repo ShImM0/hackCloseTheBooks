@@ -1,0 +1,15 @@
+From: cuentas.pagar@ponsortizjar.example
+To: cobros@valtermia.example
+Date: Tue, 03 Jun 2025 09:28:00 +0100
+Subject: Payment advice 250602242057
+
+Hello,
+
+Please be advised that we have sent a payment of 7,502.69 EUR on 06/02/2025 covering:
+
+  FA250103787        13/02/25        2,624.33
+  FA250102017        27/01/25        2,853.11
+  FA250108526        01/04/25        2,025.25
+
+Kind regards,
+Pons Ortiz Jardins SAS

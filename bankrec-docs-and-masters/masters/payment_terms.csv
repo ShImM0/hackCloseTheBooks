@@ -1,0 +1,14 @@
+code,days,early_payment_discount_pct,discount_days,description
+T30,30,,,30 días fecha factura
+T60,60,,,60 días fecha factura
+T90,90,,,90 días fecha factura
+T30FM,30,,,30 días fin de mes
+T60D25,60,,,"60 días, día de pago 25"
+D2N30,30,2.00,10,"2 % 10 días, neto 30"
+D1N60,60,1.00,15,"1 % 15 días, neto 60"
+D3N45,45,3.00,8,"3 % 8 días, neto 45"
+CASH,0,,,Contado / pago con pedido
+DD15,15,,,Recibo domiciliado SEPA a 15 días
+DD30,30,,,Recibo domiciliado SEPA a 30 días
+N30US,30,,,Net 30
+D2N30US,30,2.00,10,2/10 Net 30

@@ -1,0 +1,25 @@
+From: cuentas.pagar@marínymateod.example
+To: cobros@valtermia.example
+Date: Wed, 25 Jun 2025 09:30:00 +0100
+Subject: Aviso de pago 250625457946
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 56.938,15 EUR con fecha 25/06/2025 que liquida los siguientes documentos:
+
+  FV25-0101935       03/02/25        3.804,13
+  FV25-0105658       26/03/25        2.828,48
+  FV25-0107245       15/04/25        4.189,98
+  FV25-0106479       02/04/25        1.055,20
+  FV25-0104518       11/03/25          710,37
+  FV25-0100148       02/01/25        2.850,07
+  FV25-0105616       26/03/25        3.262,14
+  FV25-0103463       26/02/25       12.188,57
+  FV25-0106850       08/04/25        5.520,89
+  FV25-0107340       16/04/25          627,46
+  FV25-0108116       28/04/25        2.545,84
+  FV25-0105175       19/03/25        3.315,18
+  FV25-0107808       23/04/25       14.039,84
+
+Saludos cordiales,
+Marín y Mateo Depuración S.Coop.

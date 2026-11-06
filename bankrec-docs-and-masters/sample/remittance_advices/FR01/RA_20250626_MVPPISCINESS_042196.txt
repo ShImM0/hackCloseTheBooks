@@ -1,0 +1,19 @@
+From: cuentas.pagar@mvppisciness.example
+To: cobros@valtermia.example
+Date: Thu, 26 Jun 2025 09:43:00 +0100
+Subject: Payment advice 250625631016
+
+Hello,
+
+Please be advised that we have sent a payment of 11,763.23 EUR on 06/25/2025 covering:
+
+  FA250109214        03/04/25        2,763.34
+  FA250105152        03/03/25        1,376.34
+  FA240131765        13/12/24          498.00
+  FA250107376        20/03/25        1,656.55
+  FA250110919        21/04/25          743.16
+  FA250111241        24/04/25        4,149.26
+  FA250110650        18/04/25          576.58
+
+Kind regards,
+MVP Piscines SAS

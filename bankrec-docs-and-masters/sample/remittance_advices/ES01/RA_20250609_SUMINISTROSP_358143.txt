@@ -1,0 +1,29 @@
+From: cuentas.pagar@suministrosp.example
+To: cobros@valtermia.example
+Date: Mon, 09 Jun 2025 09:40:00 +0100
+Subject: Aviso de pago PAY-2025-001442
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 65.083,78 EUR con fecha 11/06/2025 que liquida los siguientes documentos:
+
+  FV25-0404327       28/02/25       11.302,46  -2.260,49 DAMAGED GOODS
+  FV25-0404194       26/02/25          725,69
+  FV25-0405303       07/03/25        8.035,39
+  FV25-0405427       11/03/25        3.791,61
+  FV25-0404498       03/03/25        2.369,94
+  FV25-0405331       10/03/25          423,22  -21,16 PENAL. RETRASO
+  FV25-0405288       07/03/25        3.323,92
+  FV25-0405936       17/03/25        2.256,02
+  FV25-0405059       05/03/25        2.323,77
+  FV25-0405702       13/03/25        3.375,72  -337,57 PRICE DIFF
+  FV25-0404951       05/03/25        1.607,51
+  FV25-0404723       03/03/25        8.290,46
+  FV25-0405191       06/03/25        7.712,70
+  FV25-0406629       24/03/25        5.346,17
+  FV25-0404981       05/03/25        1.717,81
+  FV25-0405526       11/03/25        5.486,77
+  AB25-0400348       03/06/25         -386,16
+
+Saludos cordiales,
+Suministros Pacific S.A.

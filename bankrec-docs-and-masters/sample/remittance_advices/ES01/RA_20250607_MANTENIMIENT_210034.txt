@@ -1,0 +1,21 @@
+From: cuentas.pagar@mantenimient.example
+To: cobros@valtermia.example
+Date: Sat, 07 Jun 2025 09:05:00 +0100
+Subject: Aviso de pago 250602453722
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 60.988,43 EUR con fecha 02/06/2025 que liquida los siguientes documentos:
+
+  FV25-0105636       26/03/25        3.984,34
+  FV25-0105944       31/03/25        6.394,49
+  FV25-0106693       07/04/25        5.898,73
+  FV25-0106980       10/04/25       26.287,59
+  FV25-0107568       18/04/25        4.289,03
+  FV25-0107908       24/04/25        1.939,59
+  FV25-0100603       08/01/25        7.358,05
+  FV25-0106744       07/04/25        2.503,43
+  FV25-0101470       28/01/25        2.333,18
+
+Saludos cordiales,
+Mantenimientos Valdemora S.Coop.

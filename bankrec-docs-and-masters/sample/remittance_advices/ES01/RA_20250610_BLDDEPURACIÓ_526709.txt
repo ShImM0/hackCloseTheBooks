@@ -1,0 +1,16 @@
+From: cuentas.pagar@blddepuració.example
+To: cobros@valtermia.example
+Date: Tue, 10 Jun 2025 09:32:00 +0100
+Subject: Aviso de pago 250609413581
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 8.556,78 EUR con fecha 09/06/2025 que liquida los siguientes documentos:
+
+  FV25-0210375       09/05/25        1.402,55
+  FV25-0209222       29/04/25        2.172,47
+  FV25-0209052       28/04/25        1.129,97
+  FV25-0210062       06/05/25        3.851,79
+
+Saludos cordiales,
+BLD Depuración S.L.U.

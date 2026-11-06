@@ -1,0 +1,17 @@
+From: cuentas.pagar@schwimmbadba.example
+To: cobros@valtermia.example
+Date: Sat, 28 Jun 2025 09:05:00 +0100
+Subject: Payment advice 250630336892
+
+Hello,
+
+Please be advised that we have sent a payment of 3,334.16 EUR on 06/30/2025 covering:
+
+  RE250208611        12/05/25          364.96
+  RE250210504        03/06/25          581.71
+  RE250209338        21/05/25          144.06
+  RE250209854        28/05/25        1,105.15
+  RE250209972        29/05/25        1,138.28
+
+Kind regards,
+Schwimmbadbau Weißenau e.K.

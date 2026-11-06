@@ -1,0 +1,19 @@
+From: cuentas.pagar@vegaymontesi.example
+To: cobros@valtermia.example
+Date: Sat, 28 Jun 2025 09:36:00 +0100
+Subject: Aviso de pago 250630947178
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 35.538,94 EUR con fecha 30/06/2025 que liquida los siguientes documentos:
+
+  FV25-0207376       04/04/25       13.453,64
+  FV25-0206284       26/03/25        4.495,88
+  FV25-0207948       11/04/25       12.428,44
+  FV25-0208435       18/04/25        3.401,72
+  FV25-0207323       03/04/25        1.011,44
+  FV25-0208882       24/04/25        1.068,31
+  AB25-0200248       13/05/25         -320,49
+
+Saludos cordiales,
+Vega y Montes Instalaciones S.L.

@@ -1,0 +1,15 @@
+From: cuentas.pagar@romerowellne.example
+To: cobros@valtermia.example
+Date: Fri, 13 Jun 2025 09:01:00 +0100
+Subject: Payment advice 250610442612
+
+Hello,
+
+Please be advised that we have sent a payment of 7,422.28 EUR on 06/10/2025 covering:
+
+  RE250209858        28/05/25          697.64
+  RE250206732        15/04/25        5,185.43
+  RE250207098        21/04/25        1,656.87
+
+Kind regards,
+Romero Wellness GmbH

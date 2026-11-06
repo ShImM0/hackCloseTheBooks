@@ -1,0 +1,29 @@
+From: cuentas.pagar@gutiérrezyve.example
+To: cobros@valtermia.example
+Date: Wed, 25 Jun 2025 09:24:00 +0100
+Subject: Aviso de pago 250625817477
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 80.584,75 EUR con fecha 25/06/2025 que liquida los siguientes documentos:
+
+  FV25-0506600       04/04/25        2.537,73
+  FV25-0505827       28/03/25        7.314,62
+  FV25-0505673       27/03/25        1.213,25
+  FV25-0502171       04/02/25        2.402,12
+  FV25-0506699       04/04/25       13.756,02
+  FV25-0506761       07/04/25          883,40
+  FV25-0504232       05/03/25        5.896,23
+  FV25-0506877       08/04/25        2.674,26
+  FV25-0506954       09/04/25        2.956,79
+  FV25-0507034       10/04/25        4.602,21
+  FV25-0505610       26/03/25       14.293,11
+  FV25-0506953       09/04/25        3.721,85
+  FV25-0506854       08/04/25        3.090,56
+  FV25-0507656       21/04/25        2.845,54
+  FV25-0501275       23/01/25        2.481,30
+  FV25-0507649       21/04/25        6.686,67
+  FV25-0507956       24/04/25        3.229,09
+
+Saludos cordiales,
+Gutiérrez y Vega Camping S.Coop.

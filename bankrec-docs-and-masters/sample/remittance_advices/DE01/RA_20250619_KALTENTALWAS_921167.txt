@@ -1,0 +1,14 @@
+From: cuentas.pagar@kaltentalwas.example
+To: cobros@valtermia.example
+Date: Thu, 19 Jun 2025 09:57:00 +0100
+Subject: Payment advice 250618692121
+
+Hello,
+
+Please be advised that we have sent a payment of 2,416.46 EUR on 06/18/2025 covering:
+
+  RE250110853        04/06/25          867.02
+  RE250108108        02/05/25        1,566.78
+
+Kind regards,
+Kaltental Wassertechnik GmbH & Co. KG

@@ -1,0 +1,19 @@
+From: cuentas.pagar@bernalycarra.example
+To: cobros@valtermia.example
+Date: Tue, 10 Jun 2025 09:00:00 +0100
+Subject: Aviso de pago 250602461212
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 5.402,56 EUR con fecha 02/06/2025 que liquida los siguientes documentos:
+
+  FV25-0500833       13/01/25          640,60
+  FV25-0507269       15/04/25          904,23
+  FV25-0505747       27/03/25          654,19
+  FV24-0521752       03/12/24          591,52
+  FV24-0520291       08/11/24          574,91
+  FV25-0507871       23/04/25          170,55
+  FV25-0505274       21/03/25        1.866,56
+
+Saludos cordiales,
+Bernal y Carrasco Wellness

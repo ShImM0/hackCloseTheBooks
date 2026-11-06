@@ -1,0 +1,25 @@
+From: cuentas.pagar@monteroaquat.example
+To: cobros@valtermia.example
+Date: Fri, 27 Jun 2025 09:20:00 +0100
+Subject: Payment advice 250625480346
+
+Hello,
+
+Please be advised that we have sent a payment of 16,789.42 EUR on 06/25/2025 covering:
+
+  FA250106136        06/03/25        2,126.10
+  FA250107787        25/03/25          804.38
+  FA250105865        04/03/25        1,874.74
+  FA250112805        07/05/25          128.59
+  FA250110420        16/04/25        1,435.08
+  FA250113200        09/05/25          767.96
+  FA250108091        27/03/25          496.67
+  FA250113259        12/05/25        4,429.10
+  FA250111292        24/04/25        1,639.92
+  FA250109512        07/04/25        1,169.06
+  FA250103913        14/02/25          453.01
+  FA250106343        10/03/25        1,133.98
+  FA250114227        20/05/25          330.83
+
+Kind regards,
+Montero Aquatique EURL

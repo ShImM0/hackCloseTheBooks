@@ -1,0 +1,14 @@
+From: cuentas.pagar@mitchellwate.example
+To: cobros@valtermia.example
+Date: Tue, 10 Jun 2025 09:33:00 +0100
+Subject: Payment advice 250610124476
+
+Hello,
+
+Please be advised that we have sent a payment of 1,387.23 USD on 06/10/2025 covering:
+
+  FV25-0207526       07/04/25          811.59
+  FV25-0208906       24/04/25          575.64
+
+Kind regards,
+Mitchell Water Care

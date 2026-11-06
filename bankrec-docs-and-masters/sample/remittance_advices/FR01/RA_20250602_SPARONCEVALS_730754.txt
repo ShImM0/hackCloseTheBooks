@@ -1,0 +1,14 @@
+From: cuentas.pagar@sparoncevals.example
+To: cobros@valtermia.example
+Date: Mon, 02 Jun 2025 09:19:00 +0100
+Subject: Payment advice 250602849723
+
+Hello,
+
+Please be advised that we have sent a payment of 8,452.07 EUR on 06/02/2025 covering:
+
+  FA250104056        17/02/25        6,650.83
+  FA250104185        18/02/25        1,801.24
+
+Kind regards,
+Spa Ronceval SAS

@@ -1,0 +1,14 @@
+From: cuentas.pagar@wellnesspaci.example
+To: cobros@valtermia.example
+Date: Tue, 17 Jun 2025 09:13:00 +0100
+Subject: Payment advice 250617837701
+
+Hello,
+
+Please be advised that we have sent a payment of 1,015.12 EUR on 06/17/2025 covering:
+
+  FV25-0102588       11/02/25          450.65
+  FV25-0105943       31/03/25          564.47
+
+Kind regards,
+Wellness Pacific AG

@@ -1,0 +1,18 @@
+entity,legal_name,country,functional_currency,role,in_group_since
+ES00,"Valtermia Industrial, S.A.",ES,EUR,holding / in-house bank / cash-pool header,2010-01-01
+ES01,"Valtermia Ibérica, S.A.U.",ES,EUR,commercial Spain (branches),2010-01-01
+ES02,"Valtermia Manufacturing, S.L.U.",ES,EUR,manufacturing,2010-01-01
+PT01,"Valtermia Portugal, Lda.",PT,EUR,commercial,2010-01-01
+FR01,Valtermia France SAS,FR,EUR,commercial + plant,2010-01-01
+IT01,Valtermia Italia S.r.l.,IT,EUR,commercial,2010-01-01
+DE01,Valtermia Deutschland GmbH,DE,EUR,commercial,2010-01-01
+NL01,Valtermia Benelux B.V.,NL,EUR,commercial + logistics hub,2010-01-01
+UK01,Valtermia UK Ltd,GB,GBP,commercial,2010-01-01
+PL01,Valtermia Polska Sp. z o.o.,PL,PLN,commercial,2010-01-01
+CH01,Valtermia Schweiz AG,CH,CHF,commercial,2010-01-01
+US01,Valtermia North America Inc.,US,USD,commercial + manufacturing,2010-01-01
+MX01,"Valtermia México, S.A. de C.V.",MX,MXN,commercial,2010-01-01
+BR01,Valtermia do Brasil Ltda.,BR,BRL,commercial,2010-01-01
+MA01,Valtermia Maroc SARL,MA,MAD,commercial,2010-01-01
+CN01,"Valtermia (Ningbo) Trading Co., Ltd.",CN,CNY,sourcing + manufacturing,2010-01-01
+AU01,Valtermia Australia Pty Ltd,AU,AUD,commercial + manufacturing APAC,2010-01-01

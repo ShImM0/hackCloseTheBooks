@@ -1,0 +1,20 @@
+From: cuentas.pagar@esjjardiness.example
+To: cobros@valtermia.example
+Date: Sat, 07 Jun 2025 09:14:00 +0100
+Subject: Aviso de pago 250609465198
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 23.933,62 EUR con fecha 09/06/2025 que liquida los siguientes documentos:
+
+  FV25-0105603       26/03/25        2.811,87
+  FV25-0106222       01/04/25        1.618,05
+  FV25-0102667       12/02/25       10.722,90
+  FV25-0105103       18/03/25          615,99
+  FV25-0104819       14/03/25        1.373,57
+  FV25-0105365       21/03/25        1.456,07
+  FV25-0106792       07/04/25        1.436,67
+  FV25-0107633       21/04/25        3.898,50
+
+Saludos cordiales,
+ESJ Jardines S.L.

@@ -1,0 +1,14 @@
+From: cuentas.pagar@saintaubrace.example
+To: cobros@valtermia.example
+Date: Tue, 17 Jun 2025 09:33:00 +0100
+Subject: Payment advice 250609435620
+
+Hello,
+
+Please be advised that we have sent a payment of 1,335.78 EUR on 06/09/2025 covering:
+
+  FA250212682        16/04/25          948.86
+  FA250215734        08/05/25          386.92
+
+Kind regards,
+Saint-Aubrac Eaux EURL

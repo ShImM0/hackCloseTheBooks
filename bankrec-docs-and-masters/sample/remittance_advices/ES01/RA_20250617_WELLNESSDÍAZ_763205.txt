@@ -1,0 +1,14 @@
+From: cuentas.pagar@wellnessdíaz.example
+To: cobros@valtermia.example
+Date: Tue, 17 Jun 2025 09:22:00 +0100
+Subject: Aviso de pago 250609619211
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 4.555,00 EUR con fecha 09/06/2025 que liquida los siguientes documentos:
+
+  FV25-0405662       12/03/25        1.608,34
+  FV25-0407965       03/04/25        2.946,66
+
+Saludos cordiales,
+Wellness Díaz S.Coop.

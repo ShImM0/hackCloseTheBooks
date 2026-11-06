@@ -1,0 +1,14 @@
+From: cuentas.pagar@schwimmbadba.example
+To: cobros@valtermia.example
+Date: Tue, 10 Jun 2025 09:01:00 +0100
+Subject: Payment advice 250609779498
+
+Hello,
+
+Please be advised that we have sent a payment of 12,268.12 EUR on 06/09/2025 covering:
+
+  RE250208391        07/05/25        3,720.76
+  RE250208509        08/05/25       17,094.72
+
+Kind regards,
+Schwimmbadbau Díaz Group e.K.

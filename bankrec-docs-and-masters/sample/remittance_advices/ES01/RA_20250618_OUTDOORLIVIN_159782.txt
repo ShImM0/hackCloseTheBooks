@@ -1,0 +1,14 @@
+From: cuentas.pagar@outdoorlivin.example
+To: cobros@valtermia.example
+Date: Wed, 18 Jun 2025 09:32:00 +0100
+Subject: Payment advice 250610609084
+
+Hello,
+
+Please be advised that we have sent a payment of 1,673.92 USD on 06/10/2025 covering:
+
+  FV23-0324516       24/10/23          999.41
+  FV25-0307851       28/03/25          674.51
+
+Kind regards,
+Outdoor Living Norte Ltd

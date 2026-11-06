@@ -1,0 +1,15 @@
+From: cuentas.pagar@pardopooltec.example
+To: cobros@valtermia.example
+Date: Sun, 01 Jun 2025 09:15:00 +0100
+Subject: Payment advice 250529645032
+
+Hello,
+
+Please be advised that we have sent a payment of 3,844.74 EUR on 05/29/2025 covering:
+
+  RE250205413        28/03/25          758.79
+  RE250207185        22/04/25        2,036.65
+  RE250207455        25/04/25        1,086.20
+
+Kind regards,
+Pardo Pooltechnik e.K.

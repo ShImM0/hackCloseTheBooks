@@ -1,0 +1,17 @@
+From: cuentas.pagar@hidrotecniac.example
+To: cobros@valtermia.example
+Date: Mon, 30 Jun 2025 09:34:00 +0100
+Subject: Aviso de pago 250627859739
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 18.104,53 EUR con fecha 27/06/2025 que liquida los siguientes documentos:
+
+  FV25-0505459       24/03/25        8.101,78
+  FV25-0506460       02/04/25        6.357,42
+  FV25-0504362       07/03/25        3.365,08
+  AB25-0500106       20/03/25       -1.682,54
+  FV25-0505766       27/03/25        1.962,79
+
+Saludos cordiales,
+Hidrotecnia Campos e Hijos S.A.

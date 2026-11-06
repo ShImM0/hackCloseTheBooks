@@ -1,0 +1,17 @@
+From: cuentas.pagar@hotelesnavar.example
+To: cobros@valtermia.example
+Date: Sat, 07 Jun 2025 09:00:00 +0100
+Subject: Aviso de pago 250602835496
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 7.045,08 EUR con fecha 02/06/2025 que liquida los siguientes documentos:
+
+  FV25-0202548       07/02/25        2.496,71
+  FV25-0205762       19/03/25        1.106,47
+  FV25-0208560       21/04/25        2.160,99
+  FV25-0208481       18/04/25          342,24
+  FV25-0209177       29/04/25          938,67
+
+Saludos cordiales,
+Hoteles Navarro Pro S.Coop.

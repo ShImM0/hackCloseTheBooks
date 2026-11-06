@@ -1,0 +1,20 @@
+From: cuentas.pagar@poolbuilders.example
+To: cobros@valtermia.example
+Date: Wed, 04 Jun 2025 09:33:00 +0100
+Subject: Payment advice 250602732581
+
+Hello,
+
+Please be advised that we have sent a payment of 17,525.22 EUR on 06/02/2025 covering:
+
+  FV25-0506451       02/04/25          706.62
+  FV25-0506397       02/04/25          937.66
+  FV25-0505378       24/03/25          377.89
+  FV25-0507624       18/04/25        2,669.18
+  FV25-0506855       08/04/25        1,194.56
+  FV25-0508135       28/04/25        8,674.29
+  FV25-0508380       30/04/25        1,004.14
+  FV25-0509070       07/05/25        1,960.88
+
+Kind regards,
+Pool Builders Baker LLP

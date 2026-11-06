@@ -1,0 +1,23 @@
+From: cuentas.pagar@spavalbonnet.example
+To: cobros@valtermia.example
+Date: Tue, 03 Jun 2025 09:04:00 +0100
+Subject: Payment advice 250526357453
+
+Hello,
+
+Please be advised that we have sent a payment of 8,642.99 EUR on 05/26/2025 covering:
+
+  FA250204804        17/02/25        1,477.45
+  FA250205705        25/02/25          229.88
+  FA250205880        26/02/25          265.38
+  FA250202945        03/02/25          362.17
+  FA250207644        11/03/25        1,739.28
+  FA250209922        27/03/25          821.72
+  FA250208184        14/03/25          592.15
+  FA250204354        12/02/25          574.86
+  FA250207463        10/03/25          611.46
+  FA250211369        04/04/25          662.50
+  FA250209714        26/03/25        1,306.14
+
+Kind regards,
+Spa Valbonnet SARL

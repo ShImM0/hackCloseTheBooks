@@ -1,0 +1,19 @@
+From: cuentas.pagar@lomasecaagua.example
+To: cobros@valtermia.example
+Date: Sun, 01 Jun 2025 09:12:00 +0100
+Subject: Aviso de pago 250602341887
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 11.180,92 EUR con fecha 02/06/2025 que liquida los siguientes documentos:
+
+  FV25-0105095       18/03/25        1.651,54
+  FV25-0105906       31/03/25        2.358,51
+  FV25-0104650       12/03/25          586,93
+  FV25-0107546       18/04/25        2.428,91
+  FV25-0107725       22/04/25        1.072,60
+  FV25-0108716       02/05/25        2.267,01
+  FV25-0107738       22/04/25          815,42
+
+Saludos cordiales,
+Lomaseca Aguas S.A.

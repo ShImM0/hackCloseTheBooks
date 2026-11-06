@@ -1,0 +1,16 @@
+From: cuentas.pagar@bienêtremont.example
+To: cobros@valtermia.example
+Date: Tue, 17 Jun 2025 09:34:00 +0100
+Subject: Payment advice 250609585631
+
+Hello,
+
+Please be advised that we have sent a payment of 3,821.91 EUR on 06/09/2025 covering:
+
+  FA250107527        21/03/25        2,938.96
+  FA250112901        07/05/25          505.92
+  AV250100409        28/05/25          -50.59
+  FA250107876        25/03/25          427.62
+
+Kind regards,
+Bien-Être Montero SA

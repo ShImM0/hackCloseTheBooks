@@ -1,0 +1,15 @@
+From: cuentas.pagar@pardoferrete.example
+To: cobros@valtermia.example
+Date: Tue, 17 Jun 2025 09:33:00 +0100
+Subject: Aviso de pago 250612295293
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 11.347,12 EUR con fecha 12/06/2025 que liquida los siguientes documentos:
+
+  FV25-0105309       21/03/25        2.948,25
+  FV25-0106448       02/04/25        3.103,29
+  FV25-0106445       02/04/25       13.238,97
+
+Saludos cordiales,
+Pardo Ferretería S.L.

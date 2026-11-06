@@ -1,0 +1,17 @@
+From: cuentas.pagar@vicentewelln.example
+To: cobros@valtermia.example
+Date: Mon, 23 Jun 2025 09:03:00 +0100
+Subject: Aviso de pago 250625294822
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 37.349,98 EUR con fecha 25/06/2025 que liquida los siguientes documentos:
+
+  FV25-0508281       29/04/25        4.479,83
+  FV25-0506582       03/04/25        9.621,06
+  FV25-0509223       08/05/25          576,49
+  FV25-0509575       14/05/25        3.052,73
+  FV25-0505866       28/03/25       19.619,87
+
+Saludos cordiales,
+Vicente Wellness S.L.U.

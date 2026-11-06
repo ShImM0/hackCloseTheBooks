@@ -1,0 +1,14 @@
+From: cuentas.pagar@hdsspaslu.example
+To: cobros@valtermia.example
+Date: Mon, 09 Jun 2025 09:20:00 +0100
+Subject: Aviso de pago 250606593768
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 3.440,38 EUR con fecha 06/06/2025 que liquida los siguientes documentos:
+
+  FV25-0311039       28/04/25        1.152,43
+  FV25-0313562       20/05/25        2.287,95
+
+Saludos cordiales,
+HDS Spa S.L.U.

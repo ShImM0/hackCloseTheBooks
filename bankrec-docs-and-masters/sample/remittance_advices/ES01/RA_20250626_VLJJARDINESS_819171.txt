@@ -1,0 +1,25 @@
+From: cuentas.pagar@vljjardiness.example
+To: cobros@valtermia.example
+Date: Thu, 26 Jun 2025 09:46:00 +0100
+Subject: Aviso de pago 250623197729
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 21.066,67 EUR con fecha 23/06/2025 que liquida los siguientes documentos:
+
+  FV25-0409393       18/04/25        1.557,11
+  FV25-0406992       27/03/25        2.079,58
+  FV25-0409825       24/04/25          669,86
+  FV25-0406405       20/03/25        1.196,27
+  FV25-0409936       25/04/25          436,99
+  FV25-0409716       23/04/25        5.299,00
+  FV25-0409305       18/04/25        2.676,87
+  FV25-0412119       16/05/25          439,38
+  FV25-0409852       24/04/25        3.305,82
+  FV25-0411707       12/05/25          384,15
+  FV25-0412169       16/05/25          233,06
+  FV25-0412166       16/05/25        2.375,58
+  FV25-0409421       18/04/25          413,00
+
+Saludos cordiales,
+VLJ Jardines S.L.U.

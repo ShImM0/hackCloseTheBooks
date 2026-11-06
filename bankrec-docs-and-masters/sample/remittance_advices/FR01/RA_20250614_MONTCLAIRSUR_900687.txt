@@ -1,0 +1,24 @@
+From: cuentas.pagar@montclairsur.example
+To: cobros@valtermia.example
+Date: Sat, 14 Jun 2025 09:26:00 +0100
+Subject: Payment advice 250616208924
+
+Hello,
+
+Please be advised that we have sent a payment of 9,433.13 EUR on 06/16/2025 covering:
+
+  FA250111265        24/04/25          486.22
+  FA250106487        11/03/25          437.42
+  FA250111233        24/04/25          370.20
+  FA250111756        30/04/25          319.21
+  FA250110851        21/04/25        1,052.41
+  FA250112694        06/05/25          388.19
+  FA250112656        06/05/25          481.26
+  FA250113300        12/05/25        1,161.79
+  FA250113398        12/05/25        2,036.75
+  FA250113458        13/05/25          256.22
+  FA250113503        13/05/25        1,012.40
+  FA250113861        15/05/25        1,431.06
+
+Kind regards,
+Montclair-sur-Lys Piscines SARL

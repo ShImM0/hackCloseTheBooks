@@ -1,0 +1,15 @@
+From: cuentas.pagar@aquatiquesol.example
+To: cobros@valtermia.example
+Date: Wed, 25 Jun 2025 09:33:00 +0100
+Subject: Payment advice 250627732775
+
+Hello,
+
+Please be advised that we have sent a payment of 4,909.09 EUR on 06/27/2025 covering:
+
+  FA250213910        25/04/25        1,589.99
+  FA250216433        14/05/25        1,567.88
+  FA250216776        15/05/25        1,751.22
+
+Kind regards,
+Aquatique Sol SAS

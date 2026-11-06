@@ -1,0 +1,18 @@
+From: cuentas.pagar@spaserviceas.example
+To: cobros@valtermia.example
+Date: Wed, 25 Jun 2025 09:53:00 +0100
+Subject: Payment advice 250625781614
+
+Hello,
+
+Please be advised that we have sent a payment of 8,319.52 EUR on 06/25/2025 covering:
+
+  FV25-0310239       18/04/25        2,382.89
+  FV25-0308333       01/04/25          193.64
+  FV25-0306109       11/03/25          434.27
+  FV25-0310520       22/04/25          759.08
+  FV25-0309934       16/04/25        3,269.73
+  FV25-0312383       08/05/25        1,279.91
+
+Kind regards,
+Spa Service Ashbridge LLP

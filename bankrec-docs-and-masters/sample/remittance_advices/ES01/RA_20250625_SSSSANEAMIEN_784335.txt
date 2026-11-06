@@ -1,0 +1,15 @@
+From: cuentas.pagar@ssssaneamien.example
+To: cobros@valtermia.example
+Date: Wed, 25 Jun 2025 09:46:00 +0100
+Subject: Aviso de pago 250625197264
+
+Buenos días,
+
+Les informamos de que hemos ordenado una transferencia por importe de 3.407,50 EUR con fecha 25/06/2025 que liquida los siguientes documentos:
+
+  FV25-0507905       24/04/25        1.039,96
+  FV25-0506832       08/04/25        1.793,79
+  FV25-0505475       25/03/25          573,75
+
+Saludos cordiales,
+SSS Saneamientos S.L.U.
