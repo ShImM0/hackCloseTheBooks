@@ -111,9 +111,9 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     return p
 
 
-# Desactivado: en val sube 65,87 -> 67,70 (P 0,98), pero en LIVE bajó 65,09 -> 64,93 (envío de 572e36e).
-# No generaliza y no sabemos por qué: no se usa hasta entenderlo.
-DUP_ENABLED = False
+# val 65,87 -> 67,70 (P 0,98). El 64,93 de LIVE NO lo probaba: era e7c2b23, anterior a esta regla
+# (ar_duplicate_payment 0 % en ese envío). Pendiente de confirmar en LIVE.
+DUP_ENABLED = True
 DUP_DAYS = 60      # en TRAIN 2024 el p99 entre el pago y su duplicado es 49 días
 
 
