@@ -77,3 +77,23 @@ Medido en val completo con la cascada modificada: ar_short_discount 0,000 → 0,
 ar_discount_late → 0,551; SCORE 54,55 → 58,27; excF1 0,139 → 0,244.
 Lo que queda (590 movimientos de ar_short_discount) son cobros de VARIAS facturas con descuento en una de ellas
 (suma de saldos de un mismo tercero − descuento de una): hace falta un subset-sum por tercero (P2, `subset_sum`/`multi_ref`).
+
+## short_cash: etapas y efecto en val completo (cascada actual, 2026-11-07)
+
+Etapas de `bankrec/exceptions_amounts.py` (resolver `short_cash`, después de `amount_match`):
+1. efectivo con descuento o retención en origen (índice por entidad/divisa/céntimos);
+2. duplicado: importe == total de una factura ya cobrada (≤ 240 días), tercero con parecido ≥ 70;
+3. por importe: plazo/retención/anticipo del PDF (índice) y parcial por fracción redonda del saldo (consulta al índice por
+   saldo del ledger, ±2 céntimos), tercero con parecido ≥ 70 (PDF) / ≥ 85 (parcial);
+4. tercero primero (`parties.find`): saldo exacto en divisa distinta (`orig_amount`), gastos bancarios, sobrepago.
+Nota val: 63,19 → 65,48; excF1 0,371 → 0,457. ar_duplicate_payment 0,00 → 0,97; ar_instalment 0,78 → 0,98;
+ar_partial 0,76 → 0,98; ar_retention 0,59 → 0,99; ar_advance_deduction 0,45 → 0,98.
+Coste: los parciales con tercero ≥ 70 daban falsos positivos en `unidentified` (0,993 → 0,919); con ≥ 85 queda 0,972.
+
+### FX_DIFFERENCE y SHORT_DISPUTE (por qué siguen bajos)
+- `finalize` etiqueta bien (arnés: FX_DIFFERENCE F1 0,999; SHORT_DISPUTE 0,997 si el resolver lo pasa fijado).
+- El problema es de selección de partidas: en `ar_fx` (210 movimientos en 2 meses, ~20-250 partidas abiertas del cliente
+  en esa divisa) el golden elige un subconjunto (~25-60 % de las facturas de una ventana de ~2 semanas) sin patrón
+  estructural; `orig_amount` es la suma exacta del subconjunto en el 74 %, pero con >60 candidatas la suma no lo
+  identifica. Solo el aviso de remesa lo lista → `docs_remit` (P2). Mismo origen para SHORT_DISPUTE.
+- ap_fx se resuelve en `docs_ap` (acierto 0,69); sus fallos son parciales con tipo de cambio desconocido.

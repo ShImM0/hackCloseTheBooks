@@ -320,6 +320,10 @@ def _explain_explicit(row, open_c, amt, date, st, tol) -> Alloc:
                 return Alloc(a.item_id, open_c, "SHORT_WITHHOLDING")
     f = st.item_facts(a.item_id)
     lbl = _fact_label(f, amt, open_c, tol, _age(row, date)) if f else None
+    if lbl is None and not any(abs(amt - round(open_c * fr)) <= 1 for fr in PARTIAL_FRACS + DISPUTE_FRACS + [0.95, 0.98, 0.99]):
+        fee = open_c - amt
+        if 0 < fee <= BC_MAX_PCT * open_c and st.convert(fee, info[3], "EUR", date) <= BC_MAX_EUR * 100:
+            return Alloc(a.item_id, open_c, "SHORT_BANK_CHARGES")
     return Alloc(a.item_id, amt, "PARTIAL" if lbl is None else lbl)
 
 
