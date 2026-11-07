@@ -6,33 +6,74 @@ Reglas de saldo (POLICIES §2-3):
 - RETURNED reabre: suma el amount;
 - DUPLICATE_PAYMENT no cambia el saldo.
 
-TODO(P1): índices por (entidad, tercero), por importe y FIFO por fecha de emisión.
+Índices (para resolvers 1:1):
+- ledger.info[item_id] = (item_type, entity, currency, party_id, issue_date, document_number, po)
+- ledger.by_amount[(entity, currency, open_cents)] = [item_id...] ordenados por (issue_date, item_id) = FIFO.
+  Se mantiene al aplicar cada movimiento (solo partidas con saldo > 0).
 """
 from __future__ import annotations
+
+import bisect
+import datetime as dt
+from collections import defaultdict
 
 import polars as pl
 
 from bankrec.contract import Proposal
 
 NO_REDUCE = {"RETURNED", "DUPLICATE_PAYMENT"}
+_MIN_DATE = dt.date(1900, 1, 1)
 
 
 class Ledger:
     def __init__(self, items: pl.DataFrame):
         self.items = items  # tabla unificada de partidas (ver phase.py)
         self.open: dict[str, int] = dict(zip(items["item_id"].to_list(), items["open_cents"].to_list()))
+        cols = ["item_id", "item_type", "entity", "currency", "party_id", "issue_date", "document_number", "po"]
+        self.info = {r[0]: r[1:] for r in items.select(cols).iter_rows()}
+        self.by_amount: dict[tuple, list[str]] = defaultdict(list)
+        for iid, oc in self.open.items():
+            if oc > 0:
+                self.by_amount[self._key(iid, oc)].append(iid)
+        for lst in self.by_amount.values():
+            lst.sort(key=self._fifo)
+
+    def _key(self, iid: str, cents: int) -> tuple:
+        i = self.info[iid]
+        return (i[1], i[2], cents)
+
+    def _fifo(self, iid: str):
+        return (self.info[iid][4] or _MIN_DATE, iid)
 
     def is_open(self, item_id: str) -> bool:
         return self.open.get(item_id, 0) > 0
+
+    def with_amount(self, entity: str, currency: str, cents: int) -> list[str]:
+        """Partidas abiertas con saldo exactamente `cents`, en orden FIFO."""
+        return self.by_amount.get((entity, currency, cents), [])
+
+    def _set(self, iid: str, new: int) -> None:
+        old = self.open[iid]
+        if old == new:
+            return
+        if old > 0:
+            lst = self.by_amount.get(self._key(iid, old))
+            if lst and iid in lst:
+                lst.remove(iid)
+        if new > 0:
+            lst = self.by_amount[self._key(iid, new)]
+            keys = [self._fifo(x) for x in lst]
+            lst.insert(bisect.bisect(keys, self._fifo(iid)), iid)
+        self.open[iid] = new
 
     def apply(self, p: Proposal) -> None:
         for a in p.allocs:
             if a.item_id not in self.open:
                 continue
             if a.exception == "RETURNED":
-                self.open[a.item_id] += a.amount_cents
+                self._set(a.item_id, self.open[a.item_id] + a.amount_cents)
             elif a.exception != "DUPLICATE_PAYMENT":
-                self.open[a.item_id] = max(0, self.open[a.item_id] - a.amount_cents)
+                self._set(a.item_id, max(0, self.open[a.item_id] - a.amount_cents))
 
 
 def open_at(items: pl.DataFrame, golden: pl.DataFrame, txns: pl.DataFrame, cutoff,
