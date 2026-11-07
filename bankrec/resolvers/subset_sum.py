@@ -4,8 +4,9 @@ Qué hace (POLICIES §5.1, §5.6, §5.9): un tercero identificado por IBAN o nom
 número (ar_ref_noise 1:N): el importe es la suma de un subconjunto de sus partidas abiertas; las notas de crédito
 (ARC/APC) restan. Abono -> ARI/ARC del cliente; cargo -> API/APC del proveedor (ES00 paga por ES01/ES02/PT01).
 Cómo: tercero con parties.score >= PARTY_MIN (IBAN = 100); partidas del tercero abiertas, de la misma divisa y emitidas
-antes del movimiento; meet-in-the-middle con numpy sobre las K más antiguas, K creciente (el cliente suele pagar lo más
-antiguo, FIFO). Entre varias soluciones, la de menor coste FIFO (suma de posiciones; §5.6 entre importes iguales).
+antes del movimiento (cobro en otra divisa, §3 FX_DIFFERENCE: divisa e importe = orig_currency/orig_amount);
+meet-in-the-middle con numpy sobre las K más antiguas, K creciente (el cliente suele pagar lo más antiguo, FIFO).
+Entre varias soluciones, la de menor coste FIFO (suma de posiciones; §5.6 entre importes iguales).
 
 Precisión (§3 UNIDENTIFIED: "do not force a match"; §5.5 lookalikes): con 20-30 partidas hay 2^20+ sumas y casi
 cualquier importe coincide por casualidad con alguna (cobros con descuento, disputa, de otro tercero o de partidas que no
@@ -210,7 +211,13 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     credit = amt > 0
     types = _TYPES[credit]
     ents = (txn["entity"],) if credit else PAYMENT_FACTORY.get(txn["entity"], (txn["entity"],))
-    target = abs(amt)
+    target, cur = abs(amt), txn["currency"]
+    ocur = txn.get("orig_currency")
+    if credit and ocur and ocur != cur and txn.get("orig_amount_cents"):
+        # cobro en otra divisa (POLICIES §3 FX_DIFFERENCE): el cliente paga el importe de la factura en su divisa y
+        # el banco muestra el original; se buscan partidas en orig_currency por orig_amount. La excepción la pone
+        # exceptions.finalize (FX_DIFFERENCE en facturas, vacío en abonos).
+        target, cur = abs(txn["orig_amount_cents"]), ocur
     tctx = parties.context(txn)
     short = _shortlist(tctx, ctx, ents)
     if not short:
@@ -223,7 +230,7 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
         for iid in sh["by_party"][pid]:
             i = ledger.info[iid]
             oc = ledger.open.get(iid, 0)
-            if oc <= 0 or i[0] not in types or i[1] not in ents or i[2] != txn["currency"]:
+            if oc <= 0 or i[0] not in types or i[1] not in ents or i[2] != cur:
                 continue
             if claimed and claimed.get(iid, tid) != tid:
                 continue    # la lista un aviso de remesa casado con otro movimiento (§5.4): la cobra ese
