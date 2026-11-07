@@ -25,6 +25,10 @@ Si la búsqueda libre no da una solución segura, segunda pasada "FIFO con hueco
 facturas más antiguas (hasta K_GAPS) menos como mucho MAX_GAPS, sin abonos. Es una familia mucho más pequeña que 2^K,
 así que su LAM (misma definición, sobre la familia) es bajo aunque el cliente tenga muchas partidas abiertas. Estimado
 sobre las soluciones que la búsqueda libre rechaza: <= 2 huecos 98,7 % en val (100 % en 2024-01..02); 3 huecos 96 % (89 %).
+Última etapa (§5.6, §5.9): si las anteriores no dan nada y el tercero tiene más facturas abiertas de las que miran
+STAGES, se prueban sus K_ALL partidas más antiguas (abonos incluidos) y solo se acepta una solución exacta ÚNICA de
+>= 2 partidas con LAM <= LAM_MAX (mismas guardas de tercero y abonos). No se aplica FIFO entre soluciones: si hay dos,
+es ambigua. Con K_ALL partidas son 2^(K_ALL/2) sumas por mitad (tope de coste por movimiento).
 Sin solución segura -> None (ranker / UNIDENTIFIED / categoría): un par falso resta precisión, rompe el movimiento y
 consume la partida que luego cobra el movimiento correcto (que saldría DUPLICATE_PAYMENT).
 Entradas: txn, ctx, ledger. Salida: Proposal con una Alloc por partida al saldo abierto, o None.
@@ -56,6 +60,7 @@ W_MIN = 100            # semiventana mínima (céntimos) para estimar la densida
 MAX_NOTES_SOL = 1      # abonos netos como máximo en la solución
 MAX_GAPS = 2           # FIFO con huecos: facturas antiguas sin pagar (saltadas) como máximo
 K_GAPS = 40            # FIFO con huecos: facturas más antiguas que se miran
+K_ALL = 36             # última etapa: partidas (facturas + abonos) más antiguas del tercero, solución única
 
 _TYPES = {True: ("ARI", "ARC"), False: ("API", "APC")}   # True = abono (cobro)
 _AMBIG = "ambigua"
@@ -114,7 +119,7 @@ def _halves(vals: np.ndarray, cost: np.ndarray):
     return s, c, n
 
 
-def _solve(vals: list[int], rank: list[int], target: int, rel: list[int] | None = None):
+def _solve(vals: list[int], rank: list[int], target: int, rel: list[int] | None = None, max_sol: int = MAX_SOL):
     """(solución, lam). solución = índices del mejor subconjunto con suma == target (menor coste FIFO, luego menos
     partidas; como mucho MAX_NOTES_SOL abonos = valores negativos, y cada abono junto a su factura: rel[k] = posición
     de la factura del abono k, -1 si no está en el grupo), _AMBIG si una partida sola cuadra o hay más de MAX_SOL
@@ -139,7 +144,7 @@ def _solve(vals: list[int], rank: list[int], target: int, rel: list[int] | None 
     lam = (int((hw - lw).sum()) - n_exact) / (2 * w) * int(np.gcd.reduce(np.abs(v)))
     if n_exact == 0:
         return None, lam
-    if n_exact > MAX_SOL:
+    if n_exact > max_sol:
         return _AMBIG, lam
     best = None
     for i in np.nonzero(hi > lo)[0]:
@@ -241,7 +246,7 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
         score = parties.score(tctx, pid, ctx)
         if score < PARTY_MIN:
             continue
-        sol, lam, ambig = None, 0.0, False
+        sol, lam, ambig, stop = None, 0.0, False, False
         seen_k = set()
         for k in STAGES:
             k = min(k, len(inv))
@@ -258,6 +263,7 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
                 ambig = True
                 break
             if lam > LAM_MAX:
+                stop = True
                 break       # con más partidas solo crecen las coincidencias casuales
             if idx:
                 sol = [pool[j] for j in idx]
@@ -269,6 +275,15 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
                 idx, lam = _fifo_gaps(gv, target)
                 if idx and lam <= LAM_MAX:
                     sol, how = [inv[j] for j in idx], "fifo"
+        if not sol and not ambig and not stop and len(inv) > max(seen_k, default=0):
+            k = min(len(inv), K_ALL - len(notes))       # última etapa: todas hasta K_ALL, solución única
+            pool = inv[:k] + notes
+            vals = [ledger.open[i] for i in pool[:k]] + [-ledger.open[i] for i in notes]
+            pos = {iid: p for p, iid in enumerate(inv[:k])}
+            rel = [-1] * k + [pos.get(sh["rel"].get(n), -1) for n in notes]
+            idx, lam = _solve(vals, list(range(k)) + [0] * len(notes), target, rel, max_sol=1)
+            if idx and idx is not _AMBIG and lam <= LAM_MAX:
+                sol, how = [pool[j] for j in idx], "todas"
         if sol:
             allocs = [Alloc(i, ledger.open[i]) for i in sol]
             return Proposal(txn["bank_txn_id"], allocs, confidence=0.8 * score / 100, resolver=NAME,
