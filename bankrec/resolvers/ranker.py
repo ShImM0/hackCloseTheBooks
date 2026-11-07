@@ -44,7 +44,7 @@ EARLY_STOPPING = 30
 MODEL_PARAMS = dict(n_estimators=500, learning_rate=0.05, num_leaves=31, max_depth=6,
                     min_child_samples=100, reg_lambda=5.0, subsample=0.8, subsample_freq=1,
                     colsample_bytree=0.8, verbose=-1, random_state=7, n_jobs=4)
-VERSION = "v2"       # features relativas, negativos 1:N y validación temporal; invalida modelos anteriores
+VERSION = "v3"       # v3: parties.score cambia (nombres cortos con forma jurídica); v2: features relativas, negativos 1:N
 
 FEATS = ["ratio", "log_relative_diff", "exact", "ratio_total", "ref", "pscore", "days_issue", "days_due", "fx", "is_ap",
          "n_cands", "n_party", "fifo_rank", "month_hit", "diff_rank", "pscore_rank", "log_open_share", "n_exact", "other_ent"]

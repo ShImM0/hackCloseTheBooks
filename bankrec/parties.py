@@ -23,12 +23,17 @@ NAME = "parties"
 _LEGAL = set("""SL SLU SA SAU SCOOP SC SCP SRL SRLS SNC SAS SARL EURL SASU GMBH CO KG EK EV AG UG MBH LTD LIMITED PLC LLP
 PTY LLC INC CORP CORPORATION BV NV SPZOO SP Z OO LDA EIRELI ME DE CV RL SPA SPZ OHG THE AND Y E ET UND""".split())
 _NONALPHA = re.compile(r"[^A-Z0-9 ]+")
+RAW_SCORE = 90.0   # score de un nombre corto encontrado entero con su forma jurídica (< 95 de subset_sum)
 
 
 def norm_name(s: str | None) -> str:
     """'Prieto y Llorente Suministros S.L.' -> 'PRIETO LLORENTE SUMINISTROS'."""
-    s = _NONALPHA.sub(" ", unidecode(s or "").upper().replace(".", "").replace("&", " "))
-    return " ".join(w for w in s.split() if w not in _LEGAL)
+    return " ".join(w for w in norm_raw(s).split() if w not in _LEGAL)
+
+
+def norm_raw(s: str | None) -> str:
+    """Como norm_name pero sin quitar formas jurídicas: 'AÁS Spa S.L.' -> 'AAS SPA SL'."""
+    return " ".join(_NONALPHA.sub(" ", unidecode(s or "").upper().replace(".", "").replace("&", " ")).split())
 
 
 def prepare(ctx) -> None:
@@ -36,12 +41,15 @@ def prepare(ctx) -> None:
     if "parties" in ctx.shared:
         return
     names: dict[str, set[str]] = defaultdict(set)
+    raw: dict[str, set[str]] = defaultdict(set)   # nombres que sin forma jurídica quedan en < 5 letras ("AAS SPA SL")
     iban: dict[str, set[str]] = defaultdict(set)
     cust = ctx.master("customers")
     for r in cust.select("customer_id", "name", "trade_name", "iban").iter_rows():
         for n in r[1:3]:
             if n:
                 names[r[0]].add(norm_name(n))
+                if len(norm_name(n)) < 5 and len(norm_raw(n)) >= 8:
+                    raw[r[0]].add(norm_raw(n))
         if r[3]:
             iban[refs.norm(r[3])].add(r[0])
     sup = ctx.master("suppliers")
@@ -77,13 +85,14 @@ def prepare(ctx) -> None:
     for pid, ns in names.items():
         for n in ns:
             exact[n].add(pid)
-    ctx.shared["parties"] = {"names": names, "iban": iban, "words": words, "exact": exact}
+    ctx.shared["parties"] = {"names": names, "iban": iban, "words": words, "exact": exact, "raw": dict(raw)}
 
 
 def context(txn: dict) -> dict:
     """Lo que se compara una vez por movimiento."""
     hay = refs.haystack(txn)
-    return {"hay": norm_name(hay), "ibans": refs.ibans(txn), "cp": norm_name(txn.get("counterparty_name"))}
+    return {"hay": norm_name(hay), "hay_full": norm_raw(hay), "ibans": refs.ibans(txn),
+            "cp": norm_name(txn.get("counterparty_name"))}
 
 
 def score(tctx: dict, party_id: str, ctx) -> float:
@@ -98,6 +107,12 @@ def score(tctx: dict, party_id: str, ctx) -> float:
         best = max(best, fuzz.partial_ratio(n, hay))
         if len(n) > 16:  # el banco corta el nombre a 16-20 caracteres
             best = max(best, 0.95 * fuzz.partial_ratio(n[:16], hay))
+    # nombre corto sin forma jurídica ("AAS SPA SL"): solo coincidencia exacta de palabras enteras, y como mucho
+    # RAW_SCORE (la forma jurídica la comparten muchos: con parecido difuso daba 32 k falsos frente a 836 aciertos)
+    if "hay_full" in tctx:
+        hay_full = f" {tctx['hay_full']} "
+        if any(f" {n} " in hay_full for n in P.get("raw", {}).get(party_id, ())):
+            best = max(best, RAW_SCORE)
     return best
 
 
