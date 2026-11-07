@@ -95,7 +95,8 @@ def build(name: str, months: int | None = None) -> Phase:
     if name == "sample":
         items = items_here.with_columns(pl.col("total_cents").alias("open_cents"))
     elif name == "val":
-        before = open_at(items_here, golden, txns_all, start)
+        live_oi = load.table("live", "open_items_at_start")
+        before = open_at(items_here, golden, txns_all, start, None if live_oi is None else live_oi["item_id"])
         issued = items_here.filter((pl.col("issue_date") >= start) & (pl.col("issue_date") < end))
         items = pl.concat([before, issued.with_columns(pl.col("total_cents").alias("open_cents"))])
     else:

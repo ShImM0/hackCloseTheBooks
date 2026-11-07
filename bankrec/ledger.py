@@ -35,13 +35,22 @@ class Ledger:
                 self.open[a.item_id] = max(0, self.open[a.item_id] - a.amount_cents)
 
 
-def open_at(items: pl.DataFrame, golden: pl.DataFrame, txns: pl.DataFrame, cutoff) -> pl.DataFrame:
+def open_at(items: pl.DataFrame, golden: pl.DataFrame, txns: pl.DataFrame, cutoff,
+            later_open: pl.Series | None = None) -> pl.DataFrame:
     """Reconstruye las partidas abiertas a `cutoff` (date) con el golden de los movimientos anteriores.
-    items: tabla unificada con total_cents; devuelve items emitidos antes de cutoff con open_cents > 0."""
+    items: tabla unificada con total_cents; devuelve items emitidos antes de cutoff con open_cents > 0.
+
+    El golden no ve los cierres fuera de banco (facturas anuladas y su abono, partidas pre-2021-07 cobradas antes
+    de TRAIN, restos dados de baja): sin filtro sobran ~237 k partidas a 2025-07-01. Por eso solo se conservan las
+    que siguen vivas más tarde: tienen golden en/tras cutoff o están en `later_open` (ids de open_items_at_start
+    de la fase siguiente). Comprobado a 2025-07-01 contra live/open_items_at_start: 100 % de ids, 99,7 % de importes.
+    """
+    gj = golden.filter(pl.col("item_id").is_not_null()).join(txns.select("bank_txn_id", "booking_date"), on="bank_txn_id")
+    alive = gj.filter(pl.col("booking_date") >= cutoff)["item_id"]
+    if later_open is not None:
+        alive = pl.concat([alive, later_open])
     g = (
-        golden.filter(pl.col("item_id").is_not_null())
-        .join(txns.select("bank_txn_id", "booking_date"), on="bank_txn_id")
-        .filter(pl.col("booking_date") < cutoff)
+        gj.filter(pl.col("booking_date") < cutoff)
         .group_by("item_id")
         .agg(
             pl.when(pl.col("exception") == "RETURNED").then(-pl.col("amount_cents"))
@@ -50,7 +59,7 @@ def open_at(items: pl.DataFrame, golden: pl.DataFrame, txns: pl.DataFrame, cutof
         )
     )
     return (
-        items.filter(pl.col("issue_date") < cutoff)
+        items.filter((pl.col("issue_date") < cutoff) & pl.col("item_id").is_in(alive.unique().implode()))
         .join(g, on="item_id", how="left")
         .with_columns((pl.col("total_cents") - pl.col("applied").fill_null(0)).alias("open_cents"))
         .drop("applied")
