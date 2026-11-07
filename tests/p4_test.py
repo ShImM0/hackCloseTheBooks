@@ -259,14 +259,65 @@ class UnmatchedDecisions(unittest.TestCase):
                                                          pro=[cand(pid='SES01000002')])))   # también proveedor
 
     def test_amount_below_smallest_invoice_is_unidentified(self):
-        self.assertEqual(self.decide(amt=50000, cli=[cand(min=40000)])[0], nonitem_unmatched.PENDING)
-        cat, exc, why = self.decide(amt=30000, cli=[cand(min=40000)])
+        self.assertEqual(self.decide(amt=50010, cli=[cand(min=40010)])[0], nonitem_unmatched.PENDING)
+        cat, exc, why = self.decide(amt=30010, cli=[cand(min=40010)])
         self.assertEqual((cat, exc), ('UNIDENTIFIED', 'UNIDENTIFIED'))
         self.assertIn('factura más pequeña', why)
-        ref = {'iid': 'ARI-2031-0000001', 'rs': 100, 'antes': True, 'pf': 0, 't': 'ARI', 'min': 40000}
-        self.assertEqual(self.decide(amt=30000, ref=ref)[0], 'UNIDENTIFIED')
-        self.assertEqual(self.decide(amt=40000, ref=ref)[0], nonitem_unmatched.PENDING)
-        self.assertEqual(self.decide(amt=30000, cli=[cand(min=None)])[0], nonitem_unmatched.PENDING)  # sin facturas
+        ref = {'iid': 'ARI-2031-0000001', 'rs': 100, 'antes': True, 'pf': 0, 't': 'ARI', 'min': 40010}
+        self.assertEqual(self.decide(amt=30010, ref=ref)[0], 'UNIDENTIFIED')
+        self.assertEqual(self.decide(amt=40010, ref=ref)[0], nonitem_unmatched.PENDING)
+        self.assertEqual(self.decide(amt=30010, cli=[cand(min=None)])[0], nonitem_unmatched.PENDING)  # sin facturas
+
+    def test_round_amount_does_not_override_identified_payer_or_reference(self):
+        cat, exc, why = self.decide(amt=50000, cli=[cand()])
+        self.assertEqual((cat, exc), (nonitem_unmatched.PENDING, ''))
+        ref = {'iid': 'ARI-2031-0000001', 'rs': 100, 'antes': True, 'pf': 0, 't': 'ARI'}
+        self.assertEqual(self.decide(amt=120000, ref=ref)[0], nonitem_unmatched.PENDING)
+        self.assertEqual(self.decide(amt=50000)[0], 'UNIDENTIFIED')
+        self.assertEqual(self.decide(amt=50010, cli=[cand()])[0], nonitem_unmatched.PENDING)   # con céntimos
+        self.assertEqual(self.decide(amt=50000, iban=[{'pid': 'CES01000001', 'ab': 1, 'aa': 2}])[0],
+                         nonitem_unmatched.PENDING)
+        self.assertEqual(self.decide(amt=50000, lote='REMESA')[0], nonitem_unmatched.PENDING)
+        sup = cand(pid='SES01000001', aa=0, ab=0, api=True, n='QUIMICA NUEVA')
+        self.assertEqual(self.decide(amt=50000, pro=[sup])[0], 'SUPPLIER_REFUND')
+
+    def test_spa_is_part_of_the_name_not_a_legal_form(self):
+        self.assertEqual(parties.norm_name('Soto Spa S.A.'), 'SOTO')   # por qué hace falta la variante
+        for raw, exp in [('Soto Spa S.A.', 'SOTO SPA'), ('Spa Carrasco S.L.U.', 'SPA CARRASCO'),
+                         ('Murphy Spa Service Ltd', 'MURPHY SPA SERVICE'), ('Rossi S.p.A.', 'ROSSI'),
+                         ('Ferretería Nube S.L.', 'FERRETERIA NUBE')]:
+            self.assertEqual(nonitem_unmatched._norm4(raw), exp, raw)
+
+    def test_real_prepare_finds_company_whose_name_has_spa(self):
+        items = [{'item_id': 'ARI-2031-0000001', 'item_type': 'ARI', 'entity': 'XX01', 'party_id': 'CXX01000001',
+                  'party_name': 'Soto Spa S.A.', 'document_number': 'ZZ31-0000001',
+                  'issue_date': date(2031, 1, 5), 'open_cents': 12345}]
+        cust = [{'customer_id': 'CXX01000001', 'entity': 'XX01', 'name': 'Soto Spa S.A.', 'trade_name': None,
+                 'iban': None, 'parent_customer_id': None}]
+        ctx, ledger = unmatched_ctx(items, cust)
+        t = dict(bank_txn_id='BT-2031-0000001', entity='XX01', text='VIR SEPA RECU /DE SOTO SPA SA /MOTIF PAYMENT /REF',
+                 amount_cents=51234, booking_date=date(2031, 2, 1), ref2='', remittance_info='', counterparty_name='')
+        p = nonitem_unmatched.resolve(t, ctx, ledger)
+        self.assertEqual((p.category, p.exception), (nonitem_unmatched.PENDING, ''), p.reason)
+
+    def test_spa_does_not_identify_a_different_company(self):
+        for registered, payer in [('Pool Spa Bennett S.A.', 'Pool Bennett S.A.'),
+                                  ('Pool Bennett S.A.', 'Pool Spa Bennett S.A.')]:
+            with self.subTest(registered=registered, payer=payer):
+                items = [{'item_id': 'ARI-2031-0000001', 'item_type': 'ARI', 'entity': 'XX01',
+                          'party_id': 'CXX01000001', 'party_name': registered, 'document_number': 'ZZ31-0000001',
+                          'issue_date': date(2031, 1, 5), 'open_cents': 12345}]
+                cust = [{'customer_id': 'CXX01000001', 'entity': 'XX01', 'name': registered, 'trade_name': None,
+                         'iban': None, 'parent_customer_id': None}]
+                ctx, ledger = unmatched_ctx(items, cust)
+                t = dict(bank_txn_id='BT-2031-0000001', entity='XX01', text='TRANSFERENCIA ' + payer,
+                         amount_cents=51234, booking_date=date(2031, 2, 1), ref2='', remittance_info='',
+                         counterparty_name=payer)
+                p = nonitem_unmatched.resolve(t, ctx, ledger)
+                self.assertEqual((p.category, p.exception), ('UNIDENTIFIED', 'UNIDENTIFIED'), p.reason)
+                p = nonitem_unmatched.resolve({**t, 'text': 'TRANSFERENCIA ' + registered,
+                                              'counterparty_name': registered}, ctx, ledger)
+                self.assertEqual((p.category, p.exception), (nonitem_unmatched.PENDING, ''), p.reason)
 
     def test_supplier_refund_citing_invoice_despite_unrelated_open_credit_note(self):
         sup = cand(pid='SES01000001', aa=1, ab=1, api=True, n='QUIMICA NUEVA')
@@ -282,7 +333,7 @@ class UnmatchedDecisions(unittest.TestCase):
                  'iban': None, 'parent_customer_id': None}]
         ctx, ledger = unmatched_ctx(items, cust)
         t = dict(bank_txn_id='BT-2031-0000001', entity='XX01', text='TRANSFERENCIA DE FERRETERIA NUBE S.L.',
-                 amount_cents=50000, booking_date=date(2031, 2, 1), ref2='', remittance_info='', counterparty_name='')
+                 amount_cents=51234, booking_date=date(2031, 2, 1), ref2='', remittance_info='', counterparty_name='')
         p = nonitem_unmatched.resolve(t, ctx, ledger)
         self.assertEqual((p.category, p.exception), (nonitem_unmatched.PENDING, ''))
         self.assertTrue(json.loads(p.reason.split(' | ', 1)[1])['cli'][0]['emp'])

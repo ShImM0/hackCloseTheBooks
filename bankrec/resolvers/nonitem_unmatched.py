@@ -21,6 +21,9 @@ más es un falso positivo de esa clase en el macro-F1. Por orden:
    la divisa del cobro, no paga ninguna de sus facturas: el nombre o el número coinciden por azar → UNIDENTIFIED.
    En val, por nombre: 27 % de los UNIDENTIFIED reales y 0,5 % de los cobros con partida; por número: 21 % / 0,1 %.
 4. Nada de lo anterior → UNIDENTIFIED (category y exception). El audit dice qué candidato se descartó y por qué.
+Nombres: se normalizan conservando «Spa» como palabra del nombre (_norm4). parties la
+quita como si fuera la forma social italiana: «Soto Spa S.A.» se queda en «SOTO» (descartado por corto) y «Spa
+Carrasco S.L.U.» en «CARRASCO» (una palabra); en val eran 198 de los 389 UNIDENTIFIED falsos (610 clientes).
 Reembolsos de proveedor en ES00: la fábrica de pagos (POLICIES §5.2) paga por ES01/ES02/PT01, así que el proveedor
 que devuelve un pago duplicado puede ser de esas sociedades.
 
@@ -61,6 +64,7 @@ KEY_LEN = 6                    # dígitos de las claves de número impreso (como
 MAX_KEY = 300                  # claves de nombre o número demasiado genéricas se ignoran
 SMALL = 1.0                    # cobro < SMALL × factura más pequeña del tercero (misma divisa) = no paga sus facturas
                                # (val: 0,75 y 1,0 separan casi igual; se elige el valor redondo)
+_SPA = "SPAPALABRA"            # marca para que parties.norm_name no quite «Spa» cuando es palabra del nombre
 BATCH = re.compile(r"\bLOCKBOX\b|\bDEPOSIT \d+ ITEMS?\b|\bCARD SETTLEMENT\b|\bSETTLEMENT\b|\bREMESA\b|\bTPV\b"
                    r"|\bACQUIR|\bADQUIRENTE\b|\bCHEQUES?\b|\bCHQ\b|\bCHECKS?\b")
 REFUND = re.compile(r"\bREEMBOLSO\b|\bDEVOLUCION\b|\bREFUND\b|\bRIMBORSO\b|\bREMBOURSEMENT\b|\bERSTATTUNG\b"
@@ -81,6 +85,13 @@ def _name_keys(name: str, df: Counter) -> list[str]:
     return sorted(_bigrams(name), key=lambda b: (df[b], b))[:2]
 
 
+def _norm4(raw: str | None) -> str:
+    """parties.norm_name, pero «Spa» sin puntos es parte del nombre (piscinas y spas); solo «S.p.A.» con puntos es la
+    forma social italiana. 'Soto Spa S.A.' -> 'SOTO SPA' (parties: 'SOTO'); 'Rossi S.p.A.' -> 'ROSSI'."""
+    s = re.sub(r"(?i)\bS\.\s?P\.\s?A\b\.?", " ", raw or "")
+    return parties.norm_name(re.sub(r"(?i)\bSPA\b", _SPA, s)).replace(_SPA, "SPA")
+
+
 def is_company(raw: str | None) -> bool:
     """'Porto Alvor Jardins S.A.' -> True; 'Raquel Gómez Garrido' -> False."""
     words = re.sub(r"[^A-Z0-9 ]+", " ", unidecode(raw or "").upper().replace(".", "")).split()
@@ -91,11 +102,11 @@ def prepare(ctx) -> None:
     """Índices por sociedad: partidas con saldo (ARI/APC para abonos, ARC para cargos), nombres de todos sus
     terceros (bigramas raros) y números impresos (dígitos → item_id). Maestros vía ctx.master (FINAL: masters_final)."""
     parties.prepare(ctx)
-    names = ctx.shared["parties"]["names"]
     items = ctx.items
+    cust = ctx.master("customers")
     raw: dict[str, set[str]] = defaultdict(set)
     ent_of: dict[str, set[str]] = defaultdict(set)
-    for cid, ent, n, tn in ctx.master("customers").select("customer_id", "entity", "name", "trade_name").iter_rows():
+    for cid, ent, n, tn in cust.select("customer_id", "entity", "name", "trade_name").iter_rows():
         ent_of[cid].add(ent)
         raw[cid].update(x for x in (n, tn) if x)
     for sid, ent, n in ctx.master("suppliers").select("supplier_id", "entity", "name").iter_rows():
@@ -108,6 +119,16 @@ def prepare(ctx) -> None:
             if pn:
                 raw[pid].add(pn)
     company = {pid: any(is_company(n) for n in ns) for pid, ns in raw.items()}
+    # La misma normalización en ambos lados; conservar el alias sin SPA confundiría empresas distintas.
+    # La filial hereda los nombres de su matriz (§5.1).
+    alias: dict[str, set[str]] = defaultdict(set)
+    for pid, ns in raw.items():
+        alias[pid].update(v for v in map(_norm4, ns) if len(v) >= 5)
+    if "parent_customer_id" in cust.columns:
+        for child, parent in cust.select("customer_id", "parent_customer_id").iter_rows():
+            if parent:
+                alias[child].update(alias.get(parent, ()))
+    names = {pid: sorted(ns) for pid, ns in alias.items()}
     items_of: dict[str, list[tuple[str, str, object]]] = defaultdict(list)
     ref_idx: dict[tuple, list[str]] = defaultdict(list)
     info: dict[str, tuple] = {}
@@ -146,7 +167,7 @@ def prepare(ctx) -> None:
             for k in _name_keys(n, df):
                 name_idx[(ent, k)].append((n, pid))
     ctx.shared[NAME] = {"items_of": items_of, "ref": ref_idx, "name": name_idx, "company": company,
-                        "info": info, "api_of": api_of, "min_inv": min_inv}
+                        "info": info, "api_of": api_of, "min_inv": min_inv, "names": names}
 
 
 def _bal(ledger, iid: str) -> int:
@@ -185,10 +206,10 @@ def _candidates(txn, tctx, ctx, prefix: str, ent: str | None = None) -> list[tup
     """Terceros cuyo nombre aparece en el movimiento, con prefijo de id (C<sociedad> clientes, S<sociedad>
     proveedores): (party, score, nombre que mejor encaja). Une parties.find (IBAN, contraparte exacta, palabras
     raras) y el índice de bigramas (nombres de vocabulario común, que parties.find no busca). `ent`: sociedad de
-    los terceros si no es la del movimiento (fábrica de pagos)."""
+    los terceros si no es la del movimiento (fábrica de pagos). Tanto nombres como concepto conservan «Spa»."""
     S = ctx.shared[NAME]
-    names = ctx.shared["parties"]["names"]
-    hay = tctx["hay"]
+    names = S["names"]
+    hay = tctx["hay4"]
     pids = {p for p, _ in parties.find(tctx, ctx, prefix)}
     for b in _bigrams(hay):
         cands = S["name"].get((ent or txn["entity"], b), ())
@@ -213,10 +234,11 @@ def features(txn: dict, ctx, ledger) -> dict:
     ent, day = txn["entity"], txn["booking_date"]
     text = normalized(" ".join(txn.get(k) or "" for k in ("text", "remittance_info")))
     tctx = parties.context(txn)
+    tctx["hay4"], tctx["cp4"] = _norm4(refs.haystack(txn)), _norm4(txn.get("counterparty_name"))
     credit = txn["amount_cents"] > 0
     cur, cash = txn.get("currency"), abs(txn["amount_cents"])
     f: dict = {"lote": (m.group(0) if (m := BATCH.search(text)) else ""), "reemb": bool(REFUND.search(text)),
-               "cp": bool(tctx["cp"]), "amt": cash}
+               "cp": bool(tctx["cp4"]), "amt": cash}
     f["iban"] = []
     for ib in tctx["ibans"]:
         for pid in sorted(ctx.shared["parties"]["iban"].get(ib, ())):
@@ -249,7 +271,7 @@ def features(txn: dict, ctx, ledger) -> dict:
             types = (("ARI",) if key == "cli" else ("APC",)) if credit else (("ARC",) if key == "cli" else ("API",))
             ab, aa = _open(S, pid, ledger, day, types)
             c = {"pid": pid, "sc": sc, "w": len(n.split()), "emp": S["company"].get(pid, False), "ab": ab, "aa": aa,
-                 "n": n, "cpr": round(fuzz.ratio(tctx["cp"], n)) if tctx["cp"] else None}
+                 "n": n, "cpr": round(fuzz.ratio(tctx["cp4"], n)) if tctx["cp4"] else None}
             if key == "pro":
                 c["api"] = bool(toks) and any(refs.ref_score(dn, toks) >= 85 for dn in S["api_of"].get(pid, ()))
                 if credit and aa:
