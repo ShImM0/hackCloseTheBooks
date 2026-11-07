@@ -74,7 +74,9 @@ def classify(txn: dict, pool: frozenset[str] = frozenset()) -> tuple[str, str] |
     elif hit(r"SEGURIDAD SOCIAL|SOCIAL CHARGES|\bURSSAF\b|SOZIALVERSICHERUNG|\bTGSS\b"):
         if not credit:
             category = "SOCIAL_SECURITY"
-    elif hit(r"\bIMPUESTOS?\b|\bTAX (?:PAYMENT|REFUND)\b|\bVAT RETURN\b|DEVOLUCION (?:IVA|HACIENDA)|\bTAX AUTHORITY\b|\bDGFIP\b"):
+    elif hit(r"\bIMPUESTOS?\b|\bTAX (?:PAYMENT|REFUND)\b|\bVAT RETURN\b|DEVOLUCION (?:IVA|HACIENDA)|\bTAX AUTHORITY\b|\bDGFIP\b"
+             r"|\bAEAT\b"):
+        # AEAT (agencia tributaria española): 4 de 4 TAX_REFUND en TRAIN (2022, 2024, 2025)
         category = "TAX_REFUND" if credit else "TAX_PAYMENT"
     elif hit(r"LIQUIDACION (?:DE )?INTERESES|INTEREST (?:CREDIT|DEBIT|SETTLEMENT|PAYMENT)") and not hit(r"COMISION"):
         category = "INTEREST_INCOME" if credit else "INTEREST_EXPENSE"
