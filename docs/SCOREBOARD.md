@@ -85,3 +85,4 @@
 | 58 | `ar_card_chargeback` | ~31 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |
 | 59 | `nonitem_interest_expense` | ~28 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |
 | 60 | `ar_1to1_remittance` | ~5 | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |- 2026-11-07 16:40 · P1 · descartado (dentro del ruido ±0,06): by_ratio no asigna si el texto cita otra partida del tercero (88.96 vs 88.95); meses cortados en amount_match (+0.01).
+- 2026-11-07 16:50 · P1 · val main eb20ae0 (+ 2255229 de P3: excepciones) = **89.67** (P 0.957 R 0.853; txnAcc 0.939; excF1 0.819; OVERPAYMENT F1 0.57→0.85). Candidato #10.
