@@ -72,8 +72,10 @@ def overpay_shape(c: int, o: int) -> bool:
 
 def cross_border(txn: dict) -> bool:
     """Cobro transfronterizo de fuera de SEPA (POLICIES §3 SHORT_BANK_CHARGES): familia ISO 20022 XBCT o texto
-    'TRANSFER. EN DIV.'. Los cobros domésticos (SEPA ESCT, ACH, transferencias nacionales) nunca llevan gastos."""
-    return "XBCT" in (txn.get("bank_code") or "") or "EN DIV" in (txn.get("text") or "").upper()
+    'TRANSFER. EN DIV.' o la etiqueta de gastos de MT940 '/CHGS/' (TRAIN 2021-2025: 108 de 108 movimientos con ella
+    son SHORT_BANK_CHARGES). Los cobros domésticos (SEPA ESCT, ACH, transferencias nacionales) nunca llevan gastos."""
+    text = (txn.get("text") or "").upper()
+    return "XBCT" in (txn.get("bank_code") or "") or "EN DIV" in text or "/CHGS/" in text
 
 
 def charges_possible(txn: dict, st, party) -> bool:
