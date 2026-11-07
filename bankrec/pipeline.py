@@ -94,7 +94,10 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
         if allocs:
             rows.extend([tid, a.item_id, fmt_cents(a.amount_cents), "", a.exception] for a in allocs)
         else:
-            rows.append([tid, "", "", prop.category or "UNIDENTIFIED", prop.exception])
+            cat = prop.category or "UNIDENTIFIED"
+            # en el golden UNIDENTIFIED siempre va con category y exception UNIDENTIFIED
+            exc = "UNIDENTIFIED" if cat == "UNIDENTIFIED" else prop.exception
+            rows.append([tid, "", "", cat, exc])
         audit.append((tid, prop.resolver, float(prop.confidence), prop.reason))
 
     out = config.out_dir(phase_name)

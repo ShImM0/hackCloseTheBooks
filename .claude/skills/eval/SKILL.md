@@ -21,3 +21,11 @@ description: Cómo medir un cambio en bankrec - smoke.py antes de cada push, run
 5. Apunta la nota en `docs/SCOREBOARD.md` (fecha-hora, quién, cambio, val, sample).
 
 No vuelques ficheros grandes al contexto: lee el .md de fallos o agrega con duckdb/polars.
+
+## Antes de aceptar una mejora (anti-overfitting, detalle en CLAUDE.md)
+
+- El código de la cascada no lee `ctx.golden` ni `segment`/`difficulty`; el histórico es `booking_date < ctx.start`.
+- Ningún id, nombre, IBAN ni importe concreto sacado de `failures_*.md` aparece en el código.
+- La regla cita POLICIES.md o un patrón repetido en varias entidades y años.
+- Confirmada con los 6 meses de val (no solo `--months 1`) y sin hundir otros segmentos.
+- `sample` no cuenta como validación independiente: está dentro de val.

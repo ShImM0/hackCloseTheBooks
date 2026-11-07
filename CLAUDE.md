@@ -108,6 +108,47 @@ uv run python -m bankrec.validate out/live/submission.csv.gz --phase live
 - Antes de pedir permiso para un comando, explica en una línea qué hace.
 - Presupuesto: LIVE completa (203 k movimientos) en < 10 min en un portátil.
 
+## Anti-overfitting (obligatorio)
+
+Solo cuenta FINAL (2026-01..06), con drift: ZA01 nueva (ZAR, facturas "KWI…", renombrada 2026-04-01),
+`final/masters_final/`, IT01 cambia de cuenta de cobros el 2026-02-01, clientes renombrados y pagos más lentos.
+Val (TRAIN 2025-01..06) es una aproximación optimista, no el objetivo.
+
+**Prohibido (fuga de etiquetas):**
+- Leer `ctx.golden` o `golden_allocations` desde un resolver, `exceptions.py`, `pdf_*` o un modelo. Solo lo leen
+  `scripts/eval.py` y los análisis offline. En live/final no existe: si tu código lo necesita, en FINAL falla.
+- Usar la columna `segment` o `difficulty` como feature o regla: no existen fuera de TRAIN.
+- Entrenar o calcular estadísticas con movimientos de la propia fase. Histórico = todo lo de
+  `booking_date < ctx.start`:
+  ```python
+  hist = load.table("train", "bank_transactions").filter(pl.col("booking_date") < ctx.start)   # val: < 2025-01
+  ```
+  En live/final esto da TRAIN completo (no hay golden de LIVE).
+- `sample` (2025-06) está DENTRO de val: no sirve como validación independiente.
+
+**Prohibido (memorizar):**
+- Hardcodear bank_txn_id, item_id, nombres, IBAN, importes o fechas concretas sacados de los fallos de val.
+- Listas fijas de entidades, cuentas, bancos o divisas: léelas de `ctx.master(...)` (en FINAL vienen de
+  `masters_final`). Formatos de número por entidad: regex general por familia, no lista cerrada (ZA01 trae "KWI…").
+- Formatos de banco atados a fecha o cuenta: detecta por contenido (`statement_format`, texto). Moncayo pasa de
+  N43 a camt.053 en 2025-10.
+
+**Cómo ajustar sin sobreajustar:**
+- Cada regla debe apoyarse en POLICIES.md (cita la sección en el docstring) o en un patrón que se repite en
+  varias entidades y años de TRAIN. Antes de subirla, compruébala también en un año anterior con un análisis
+  offline (duckdb sobre `golden_allocations` + `bank_transactions` de 2023 o 2024).
+- Umbrales (fuzzy, confianza, ventanas de días): elige valores redondos con margen, no el óptimo exacto de val.
+  Si la nota cambia > 0,3 puntos entre umbrales vecinos, la regla es frágil.
+- Prefiere precisión a recall: un par mal asignado resta en precisión y además rompe el movimiento entero en txn
+  accuracy; ante la duda, que pase al siguiente resolver o a UNIDENTIFIED/categoría.
+- Mira P y R por separado y el informe por segmento, no solo la nota: una subida global que hunde otro segmento
+  suele ser sobreajuste.
+- Iterar con `--months 1` o `--months 2` y confirmar con los 6 meses completos antes de push.
+- Árbitro externo: LIVE (P4 envía, 20/día). Si val sube y LIVE no, desconfía del cambio. Apunta las dos notas
+  en `docs/SCOREBOARD.md`.
+- Sesgo conocido de val (optimista): el conjunto de partidas abiertas excluye las cerradas fuera de banco en
+  2025-H1, y los maestros son una foto de 2025-12-31 (nombres e IBAN "del futuro" respecto a val).
+
 ## Si eres P2 / P3 / P4, empieza por…
 
 **P2 (documentos y agregados 1:N)**
