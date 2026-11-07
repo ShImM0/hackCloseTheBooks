@@ -37,7 +37,8 @@ def classify(txn: dict, pool: frozenset[str] = frozenset()) -> tuple[str, str] |
     CASH_POOL; en esas cuentas el banco los describe también como traspaso propio o entre cuentas.
     Patrones añadidos tras la auditoría 2023/2024 (100 % de una sola categoría en ambos años, sin partidas):
     CASH CONCENTRATION, PRES.XX / AMORTIZACION POLIZA, DISPOSICION POLIZA, COMPRA/VENTA DIVISA,
-    LIQUIDACION CTA.CTO, TAX AUTHORITY / DGFIP, TGSS, SEGUROS y DEVOLUCION PRESTAMO / PRESTAMO INTRAGRUPO.
+    LIQUIDACION CTA.CTO, TAX AUTHORITY / DGFIP, TGSS, SEGUROS y DEVOLUCION PRESTAMO / PRESTAMO INTRAGRUPO;
+    abono con PAGO DUPLICADO / PAGO DOBLE / DUPLICATE PAYMENT → SUPPLIER_REFUND.
     """
     code = (txn.get("bank_code") or "").upper()
     text = normalized(" ".join(txn.get(k) or "" for k in ("text", "remittance_info")))
@@ -52,7 +53,8 @@ def classify(txn: dict, pool: frozenset[str] = frozenset()) -> tuple[str, str] |
         category = "BANK_REVERSAL"
     elif hit(r"DEVOLUCION PAGO DUPLICADO|REFUND DUPLICATE PAYMENT") and not credit:
         category = "CUSTOMER_REFUND"
-    elif hit(r"ABONO PAGO DOBLE|REEMBOLSO PAGO DUPLICADO") and credit:
+    elif credit and hit(r"PAGO DUPLICADO|PAGO DOBLE|DUPLICATE PAYMENT|\bIV\*DUPLICADO\b"):
+        # POLICIES §4: reembolso de un proveedor por un pago nuestro hecho dos veces (153 de 153 en 2023/24)
         category = "SUPPLIER_REFUND"
     # Las palabras de categoría pueden ser el servicio facturado o una deducción.
     # Un código bancario aislado no basta: DATA_DICTIONARY avisa de inconsistencias.

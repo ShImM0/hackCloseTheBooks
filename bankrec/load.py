@@ -58,7 +58,10 @@ def read_folder(folder: Path, pattern: str = "*.csv") -> pl.DataFrame:
 
 def master(name: str, phase: str = "live") -> pl.DataFrame:
     """Maestro (customers, suppliers, bank_accounts, categories, payment_terms, fx_rates, entities)."""
-    return read_csv(config.masters_dir(phase) / f"{name}.csv")
+    p = config.masters_dir(phase) / f"{name}.csv"
+    if not p.exists():   # masters_final puede no traer todos los maestros: se usa el del repo
+        p = config.DOCS_DIR / "masters" / f"{name}.csv"
+    return read_csv(p)
 
 
 def table(folder: str, name: str) -> pl.DataFrame | None:

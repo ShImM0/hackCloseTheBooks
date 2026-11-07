@@ -3,7 +3,9 @@
     uv run python scripts/eval.py --phase val|sample [--sub RUTA] [--months N] [--segment X] [--dump N]
 
 - Imprime métricas, P/R/F1 por clase de excepción (conteo por fila del scorer), la confusión predicho→golden de
-  las filas sin partida y la precisión por segmento (golden.segment). Todo queda en out/<fase>/metrics.json.
+  las filas sin partida, los movimientos fallados por tipo y por resolver (del audit; mismo criterio de acierto que
+  el scorer), los UNIDENTIFIED falsos/perdidos por resolver y la precisión por segmento (golden.segment).
+  Todo queda en out/<fase>/metrics.json. Con --sub no se cruza el audit (sería de otra ejecución).
 - --dump N vuelca N movimientos fallados del segmento (--segment) o de todos a out/<fase>/failures_<segmento>.md:
   movimiento, golden, predicción y resolver/razón del audit.
 - Para val escribe antes un golden y una lista de movimientos filtrados en out/val/ (el golden completo de
@@ -61,9 +63,13 @@ def main():
     rows = submission_rows(Path(sub).read_bytes())
     excs = exception_report(G, rows)
     conf = nonitem_confusion(G, rows)
+    resolver = audit_resolvers(a.phase, a.sub)
+    fails = failure_report(G, rows, resolver, S)
+    unid = unidentified_report(G, rows, resolver)
     report = config.out_dir(a.phase) / 'metrics.json'
     report.write_text(json.dumps({'phase': a.phase, 'months': a.months, 'submission': sub, **res,
-                                  'exceptions': excs, 'nonitem_confusion': conf},
+                                  'exceptions': excs, 'nonitem_confusion': conf, 'failures': fails,
+                                  'unidentified': unid},
                                  ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(f"SCORE {res['score']:.2f} | allocF1 {m['allocation_f1']:.4f} (P {m['precision']:.4f} R {m['recall']:.4f}) | "
           f"txnAcc {m['txn_accuracy']:.4f} | excF1 {m['exception_macro_f1']:.4f} | amtAcc {m['amount_weighted_accuracy']:.4f}")
@@ -74,6 +80,7 @@ def main():
     print("sin partida, predicho -> golden (ITEM = el golden trae partidas), mayores errores:")
     for c in conf[:12]:
         print(f"  {c['pred']:18s} -> {c['gold']:18s} {c['n']:7d}")
+    print_failures(fails, unid, round(m['txn_accuracy'] * len(G.txns)))
     segs = sorted(res["segments"].items(), key=lambda x: -x[1]["n"] * (1 - x[1]["accuracy"]))
     print(f"{'segmento':32s} {'n':>7s} {'acc':>6s} {'fallos':>7s}")
     for k, v in segs:
@@ -118,6 +125,111 @@ def exception_report(G, rows) -> list[dict]:
         f1 = (2 * p_ * r_ / (p_ + r_) if p_ + r_ else 0.0) if g else None
         out.append({'exception': c, 'gold': g, 'pred': t + f, 'tp': t, 'precision': p_, 'recall': r_, 'f1': f1})
     return out
+
+
+def audit_resolvers(phase: str, sub: str | None) -> dict:
+    """bank_txn_id -> resolver del audit de la fase; vacío si --sub apunta a otra submission (audit ajeno)."""
+    path = config.out_dir(phase) / "audit.parquet"
+    if sub or not path.exists():
+        return {}
+    a = pl.read_parquet(path, columns=["bank_txn_id", "resolver"])
+    return dict(zip(a["bank_txn_id"].to_list(), a["resolver"].to_list()))
+
+
+def _amount(s: str) -> float:
+    return float(s.replace(",", "."))
+
+
+def failure_kind(gi: dict, gcat: str, gexc: str, ps: list[dict], S) -> str | None:
+    """Tipo de fallo de un movimiento; None si el scorer lo da por bueno (mismo criterio que txn accuracy)."""
+    items = {r["item_id"]: r for r in ps if r["item_id"]}
+    if not gi:
+        if items:
+            return "partida donde no hay"
+        p = ps[0] if len(ps) == 1 else {"category": "", "exception": ""}
+        if (p["category"] or "") != gcat:
+            return "categoría equivocada"
+        if (p["exception"] or "") != gexc:
+            return "excepción equivocada sin partida"
+        return None
+    if not items:
+        return "sin partida donde la hay"
+    if any(i not in gi for i in items):
+        return "partida equivocada"
+    if len(items) < len(gi):
+        return "faltan partidas (1:N incompleto)"
+    if any(abs(_amount(r["amount"]) - gi[i][0]) > S._tol(gi[i][0]) for i, r in items.items()):
+        return "importe"
+    if any((r["exception"] or "") != gi[i][1] for i, r in items.items()):
+        return "excepción"
+    return None
+
+
+def failure_report(G, rows, resolver: dict, S) -> dict:
+    """Movimientos fallados por tipo y por resolver (del audit). Dice a quién le corresponde cada punto perdido."""
+    by_txn: dict[str, list] = {}
+    for r in rows:
+        by_txn.setdefault(r["bank_txn_id"], []).append(r)
+    kinds: dict[str, int] = {}
+    per_res: dict[str, dict] = {}
+    ok = 0
+    for t, (gi, gcat, gexc, _seg) in G.txns.items():
+        kind = failure_kind(gi, gcat, gexc, by_txn.get(t, []), S)
+        d = per_res.setdefault(resolver.get(t, "(sin audit)"), {"n": 0, "fallos": 0, "tipos": {}})
+        d["n"] += 1
+        if kind is None:
+            ok += 1
+            continue
+        d["fallos"] += 1
+        d["tipos"][kind] = d["tipos"].get(kind, 0) + 1
+        kinds[kind] = kinds.get(kind, 0) + 1
+    return {"ok": ok, "tipos": dict(sorted(kinds.items(), key=lambda x: -x[1])),
+            "por_resolver": dict(sorted(per_res.items(), key=lambda x: -x[1]["fallos"]))}
+
+
+def unidentified_report(G, rows, resolver: dict) -> dict:
+    """UNIDENTIFIED por fila sin partida: falsos (el golden no es UNIDENTIFIED) por resolver que los emitió, y
+    reales perdidos por lo que recibieron. Comprueba además el registro: category y exception deben ir juntas."""
+    pred = {}
+    for r in rows:
+        if not r["item_id"]:
+            pred[r["bank_txn_id"]] = ((r["category"] or ""), (r["exception"] or ""))
+    fp: dict[str, int] = {}
+    fn: dict[str, int] = {}
+    half = 0
+    for t, (gi, gcat, gexc, _seg) in G.txns.items():
+        p = pred.get(t)
+        p_unid = p is not None and p[1] == "UNIDENTIFIED"
+        if p is not None and (p[0] == "UNIDENTIFIED") != (p[1] == "UNIDENTIFIED"):
+            half += 1
+        g_unid = not gi and gexc == "UNIDENTIFIED"
+        if p_unid and not g_unid:
+            k = resolver.get(t, "(sin audit)")
+            fp[k] = fp.get(k, 0) + 1
+        elif g_unid and not p_unid:
+            k = f"{resolver.get(t, '(sin audit)')} -> {'partida' if p is None else p[0] or '(vacío)'}"
+            fn[k] = fn.get(k, 0) + 1
+    return {"falsos_por_resolver": dict(sorted(fp.items(), key=lambda x: -x[1])),
+            "perdidos_por_resolver": dict(sorted(fn.items(), key=lambda x: -x[1])),
+            "filas_category_exception_desparejadas": half}
+
+
+def print_failures(fails: dict, unid: dict, scorer_ok: int) -> None:
+    if fails["ok"] != scorer_ok:
+        print(f"AVISO: el informe de fallos cuenta {fails['ok']} aciertos y el scorer {scorer_ok}")
+    print("movimientos fallados por tipo:")
+    for k, n in fails["tipos"].items():
+        print(f"  {k:34s} {n:7d}")
+    print(f"{'resolver':20s} {'n':>7s} {'fallos':>7s} {'acc':>6s}  tipos principales")
+    for res, d in list(fails["por_resolver"].items())[:12]:
+        top = sorted(d["tipos"].items(), key=lambda x: -x[1])[:2]
+        acc = 1 - d["fallos"] / d["n"] if d["n"] else 0.0
+        print(f"{res:20s} {d['n']:7d} {d['fallos']:7d} {acc:6.3f}  " + " · ".join(f"{k} {n}" for k, n in top))
+    fp, fn = unid["falsos_por_resolver"], unid["perdidos_por_resolver"]
+    print("UNIDENTIFIED falsos por resolver: " + (", ".join(f"{k} {n}" for k, n in fp.items()) or "ninguno"))
+    print("UNIDENTIFIED reales perdidos (resolver -> etiqueta): " + (", ".join(f"{k} {n}" for k, n in fn.items()) or "ninguno"))
+    if unid["filas_category_exception_desparejadas"]:
+        print(f"AVISO: {unid['filas_category_exception_desparejadas']} filas con UNIDENTIFIED solo en category o solo en exception")
 
 
 def nonitem_confusion(G, rows) -> list[dict]:

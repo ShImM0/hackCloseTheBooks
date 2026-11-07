@@ -23,33 +23,49 @@ una heurística conservadora, no un límite contable aprendido ni garantizado.
 `confidence=0.9` es una prioridad heurística, no una probabilidad calibrada. Las abstenciones permiten
 que la cascada continúe. El fallback compartido sigue siendo de P1 y P4 no ha modificado ese fichero.
 
-## UNIDENTIFIED: último paso `nonitem_unmatched` (pendiente de registrar por P1)
+## UNIDENTIFIED y categorías del último paso (`nonitem_unmatched`, registrado por P1)
 
-El fallback marca UNIDENTIFIED todo abono sin resolver. En val completo eran 42.890 filas UNIDENTIFIED con
-4.578 aciertas (F1 de la clase 0,19), porque casi todas tienen partida y solo falta el resolver que la encuentre.
-POLICIES §3: UNIDENTIFIED exige que NO exista partida abierta. `bankrec/resolvers/nonitem_unmatched.py` solo ve
-los abonos que nadie resolvió y mantiene UNIDENTIFIED si nada los ata a una partida abierta (ARI o APC) de su
-sociedad: IBAN de cliente/proveedor con partidas, número impreso citado (≥ 6 dígitos), nombre distintivo
-(≥ 3 palabras sin forma social, partial_ratio ≥ 90) o abono agregado (tarjetas/TPV, remesa, lockbox, cheques:
-100 % con partidas en 2023 y 2024). Si hay evidencia, emite CUSTOMER_ADVANCE sin excepción (cobro identificado
-pendiente de aplicar). El movimiento es un fallo de txn accuracy con cualquier etiqueta; lo que cambia es que no
-se declara un UNIDENTIFIED falso.
+Es el único sitio donde P4 decide UNIDENTIFIED (P2 pidió que esa lógica no salga de este módulo; el fallback de
+`pipeline.py` solo ve lo que este paso deja pasar). Reglas, por orden (POLICIES §3, §4, §5.1, §5.5):
+1. abono agregado (tarjetas/TPV, remesa, lockbox, cheques) → CUSTOMER_ADVANCE (100 % con partidas en 2023/24);
+2. ordenante = proveedor sin abono APC abierto, con texto de reembolso o que cita una factura suya → SUPPLIER_REFUND;
+3. existe partida probable → CUSTOMER_ADVANCE sin excepción (cobro identificado pendiente de aplicar): IBAN de un
+   tercero con partidas abiertas, número impreso de una partida abierta citado, o nombre que identifica a un tercero
+   con partidas abiertas. El nombre identifica si es de empresa (forma social en el maestro) con ≥ 2 palabras o de
+   particular con ≥ 3; y si el banco trae la contraparte, debe coincidir entera (un nombre contenido en otro más
+   largo es otra empresa: «POOL BENNETT» dentro de «POOL & SPA BENNETT HERMANOS CO.»);
+4. si no, UNIDENTIFIED en category y exception; el audit guarda el candidato descartado y el motivo, y todas las
+   señales en JSON («motivo | JSON») para ajustar sin reejecutar.
+Cargos: CUSTOMER_REFUND si el beneficiario es un cliente sin abono ARC abierto y ningún proveedor encaja; el resto
+va al fallback (BANK_FEES). En `nonitem`: abono con PAGO DUPLICADO / PAGO DOBLE / DUPLICATE PAYMENT →
+SUPPLIER_REFUND (153 de 153 en 2023/24; antes solo se detectaban 81).
 
-Los nombres de 2 palabras ("NOMBRE APELLIDO") no cuentan: los cobros no identificados suelen venir de
-particulares cuyo nombre coincide con un cliente (val mes 1: 8 % de las coincidencias de 2 palabras eran
-UNIDENTIFIED reales frente a 1,6 % con 3+). Sensibilidad (val mes 1): NAME_MIN 85/90/95 → 59,41/59,39/59,39;
-NAME_WORDS 4 → 59,22. Estable (< 0,3).
+Cómo se eligió: versión instrumentada con todas las señales en el audit, una ejecución de val y simulación exacta de
+cada variante (el paso es el último y no toca el ledger: Δnota = 30·Δaciertos/N + 2·ΔF1 de UNIDENTIFIED). La
+simulación predijo F1 0,860 y la ejecución real dio 0,860. Descartadas por empeorar: exigir partidas emitidas antes
+del cobro (−0,01: recupera 38 UNIDENTIFIED reales y añade 225 falsos), endurecer el número citado (−0,03 a −0,05)
+y exigir la misma forma social en texto y maestro (el banco la escribe distinto: separa peor que sin ella).
+Sensibilidad: parecido del nombre 85/90/95/100 → +0,19/+0,25/+0,25/+0,24; contraparte completa 80…100 →
++0,23…+0,25; particular ≥ 4 palabras → +0,24. Estable (< 0,3 entre vecinos).
 
-Medir sin tocar `registry.py`: `uv run python scripts/p4_run.py --phase val` (añade el módulo al final de la
-cascada en memoria) y después `scripts/eval.py --phase val`.
+A/B en val completo sobre la misma base (main 8141660): **70,41 → 70,68 (+0,27)**. UNIDENTIFIED F1 0,722 → 0,860
+(P 0,621 → 0,910; R 0,863 → 0,816), macro-F1 de excepciones +0,012, precisión de asignación +0,003 (los cobros con
+PAGO DUPLICADO dejan de casarse mal), txn accuracy −0,001 (616 UNIDENTIFIED reales con nombre de empresa que
+coincide con un cliente pasan a CUSTOMER_ADVANCE: coste asumido de la regla). SUPPLIER_REFUND 55 de 56 aciertos
+(recall 87 %, antes 38 %); CUSTOMER_REFUND 344 de 344 (recall 97 %). Ningún aviso de registro.
 
-**Petición a P1**: añadir `"bankrec.resolvers.nonitem_unmatched",` como ÚLTIMA línea de `registry.CASCADE`.
+Año anterior (2024, mismas funciones): UNIDENTIFIED reales degradados 7,9 % → 12,9 % y pagos con partida cubiertos 76,5 % → 92,5 %, igual que en 2025-H1 (9,1 → 14,7 % y 76,8 → 92,2 %); SUPPLIER_REFUND y CUSTOMER_REFUND sin ningún falso en ambos años. Detalle en `reports/P4_HISTORY.md`.
 
-## Avisos para P3 (`exceptions.py`), del informe por clase de `eval.py`
+## Avisos para el equipo (informe de fallos de `eval.py`, val sobre main 8141660)
 
-Val completo: OVERPAYMENT 2.676 filas predichas con 182 aciertos (P 0,07) y DUPLICATE_PAYMENT 506 con 0 aciertos.
-Cada fila de más es un FP de su clase en el macro-F1 (pesa igual que las clases grandes). SHORT_DISPUTE no se
-predice nunca (3.036 en el golden).
+- `subset_sum` (P2): 12.902 movimientos con acierto 61 % y 4.891 partidas equivocadas; la precisión de asignación
+  cae de 0,995 a 0,90. La nota sube por recall; que LIVE lo confirme.
+- `short_cash` (`exceptions_amounts`, P3): 5.837 movimientos, acierto 78 %, 740 partidas equivocadas.
+- UNIDENTIFIED reales casados solo por importe (la trampa «lookalike» de POLICIES §3): short_cash 176,
+  subset_sum 36, amount_match 16. Exigir tercero antes de casar por importe los devolvería.
+- Ranker (P1): 1.700 pagos de varias facturas con una sola.
+- Excepciones (P3): SHORT_DISPUTE no se predice nunca (3.036 en el golden); FX_DIFFERENCE recall 9 % (15.793);
+  SHORT_BANK_CHARGES 617 predichas con 139 aciertos; DUPLICATE_PAYMENT 1.350 con 678.
 
 El sample se inspeccionó durante desarrollo: sus resultados NO son una estimación independiente de
 generalización. No ajustar vocabulario ni umbrales para recuperar sus errores individuales. Cuando

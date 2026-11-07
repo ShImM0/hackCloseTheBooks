@@ -108,6 +108,36 @@ uv run python -m bankrec.validate out/live/submission.csv.gz --phase live
 - Antes de pedir permiso para un comando, explica en una línea qué hace.
 - Presupuesto: LIVE completa (203 k movimientos) en < 10 min en un portátil.
 
+## FINAL: guía de pasos (18:00 → 19:30, un único envío puntuado)
+
+Ensayado a las 13:55 con los datos de LIVE haciendo de FINAL: 3 min 20 s, fichero válido, sin errores.
+Lo ejecuta P1. P4 hace a la vez lo mismo en su portátil como respaldo: mismo commit, mismos pasos.
+
+1. **17:45**: congelar main. Último commit medido en val y en LIVE, anotado en `docs/SCOREBOARD.md`. Nadie hace push
+   después sin avisar a P1.
+2. **18:00**: descargar y descomprimir FINAL en `<data_dir>/final/`. Deben existir
+   `final/bank_transactions.csv.gz`, `final/open_items_at_start.csv.gz`, `final/ar_invoices.csv.gz`…
+   y `final/masters_final/*.csv`. Si el zip trae otra carpeta intermedia (`final/final/…`), mover el contenido.
+   Ignorar los `._*`.
+3. Comprobar fechas y volumen:
+   `uv run python -c "from bankrec import load; t=load.table('final','bank_transactions'); print(t.height, t['booking_date'].min(), t['booking_date'].max())"`
+   Deben ser de 2026-01-01 a 2026-06-30.
+4. **Precalentar los PDFs** (multiproceso): `uv run python -m bankrec.pdf_text final`
+5. **Ejecutar**: `uv run python scripts/run_phase.py --phase final` → `out/final/submission.csv.gz` + `VALIDO`.
+   - Tiempo esperado < 6 min. El ranker se reentrena con todo TRAIN.
+   - Si un resolver falla, el log lo dice y la cascada sigue. Si algo lo rompe todo, repetir con `--disable <nombre>`.
+6. Revisar el log:
+   - número de movimientos por resolver, parecido en proporción a LIVE;
+   - sin «partidas abiertas sin atributos» masivas;
+   - `fallback` < 1 %.
+7. Preparar el fichero (P4, a mano): `scripts/submit.py out/final/submission.csv.gz --phase final`.
+   Comparar el SHA-256 con el portátil de respaldo y subir **una vez**. Una validación rechazada no gasta el envío.
+8. Anotar commit, SHA-256 y hora en `docs/SCOREBOARD.md`.
+
+Drift ya cubierto: `masters_final` se usa fichero a fichero (si falta uno, el del repo); la filial nueva ZA01 entra
+por la misma ruta que cualquier entidad (sus números "KWI…" se indexan aunque sean cortos). La cuenta nueva de
+cobros de IT01 (2026-02-01) es nuestra: sus movimientos llevan entity IT01 igual que los de la antigua.
+
 ## Anti-overfitting (obligatorio)
 
 Solo cuenta FINAL (2026-01..06), con drift: ZA01 nueva (ZAR, facturas "KWI…", renombrada 2026-04-01),
