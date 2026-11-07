@@ -46,6 +46,11 @@ BC_MAX_EUR = 60.0
 BC_MAX_PCT = 0.02
 FX_BAND = (0.965, 1.02)          # efectivo/esperado de una liquidación total en otra divisa (tolerancia FX 3 %)
 INVOICES = ("ARI", "API")
+# POLICIES §3 DUPLICATE_PAYMENT ("customer pays twice"): en TRAIN 2021-2025 los 4.927 DUPLICATE_PAYMENT del golden son
+# pagos sueltos; ninguno es línea de remesa, liquidación de tarjeta, depósito de cheques, aviso de remesa ni payment
+# run. En val, las 1.140 filas DUPLICATE_PAYMENT de estos resolvers eran todas falsas (otro movimiento había consumido
+# antes la partida por error): con saldo 0, la fila va sin excepción por el importe del documento.
+DOC_RESOLVERS = {"docs_remit", "docs_dd", "docs_card", "docs_ap"}
 
 
 def cross_border(txn: dict) -> bool:
@@ -224,6 +229,7 @@ def finalize(prop: Proposal, txn: dict, ctx, ledger) -> Proposal | None:
     icur = rows[0][1][3]
     fx = bool(tcur and icur and tcur != icur)
     locked = any(a.exception and a.exception != "FX_DIFFERENCE" for a, _, _ in rows)
+    doc = prop.resolver in DOC_RESOLVERS
 
     if locked and not any(not a.exception for a, _, _ in rows):
         out = [Alloc(a.item_id, abs(a.amount_cents), a.exception) for a, _, _ in rows]   # RETURNED llega con signo −
@@ -236,7 +242,7 @@ def finalize(prop: Proposal, txn: dict, ctx, ledger) -> Proposal | None:
         for i in fixed:
             a, info, _ = rows[i]
             offset += abs(a.amount_cents) if info[0] in INVOICES else -abs(a.amount_cents)
-        sub = _free_rows([rows[i] for i in free], txn, st, fx, tcur, icur, offset, ar)
+        sub = _free_rows([rows[i] for i in free], txn, st, fx, tcur, icur, offset, ar, doc)
         out = [None] * len(rows)
         for i in fixed:
             out[i] = Alloc(rows[i][0].item_id, abs(rows[i][0].amount_cents), rows[i][0].exception)
@@ -246,7 +252,7 @@ def finalize(prop: Proposal, txn: dict, ctx, ledger) -> Proposal | None:
         # solo abonos (rappel pagado, reembolso del proveedor): fila normal con su saldo completo
         out = [Alloc(a.item_id, op if op > 0 else a.amount_cents, "") for a, _, op in rows]
     else:
-        out = _free_rows(rows, txn, st, fx, tcur, icur, 0, ar)
+        out = _free_rows(rows, txn, st, fx, tcur, icur, 0, ar, doc)
     tc = txn.get("currency")
     if fx or any(r[1][3] != tc for r in rows):
         for a, (_, info, _) in zip(out, rows):
@@ -257,8 +263,9 @@ def finalize(prop: Proposal, txn: dict, ctx, ledger) -> Proposal | None:
     return prop
 
 
-def _free_rows(rows, txn, st, fx, tcur, icur, offset, ar):
-    """Filas sin excepción decidida por el resolver: sentido del cobro, moneda mixta y cuadre de importes."""
+def _free_rows(rows, txn, st, fx, tcur, icur, offset, ar, doc=False):
+    """Filas sin excepción decidida por el resolver: sentido del cobro, moneda mixta y cuadre de importes.
+    doc = el resolver es de documentos (DOC_RESOLVERS): nunca DUPLICATE_PAYMENT."""
     inv_idx = [i for i, r in enumerate(rows) if r[1][0] in INVOICES]
     cn_idx = [i for i, r in enumerate(rows) if r[1][0] not in INVOICES]
     s = 1 if txn["amount_cents"] > 0 else -1
@@ -271,7 +278,7 @@ def _free_rows(rows, txn, st, fx, tcur, icur, offset, ar):
         return [Alloc(a.item_id, op if op > 0 else a.amount_cents, "") for a, _, op in rows]
     if s != side_sign:
         return _returned(rows, txn, st, fx)
-    return _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset)
+    return _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset, doc)
 
 
 def _item_cash(txn, st, icur) -> int:
@@ -333,7 +340,7 @@ def _explain_explicit(row, open_c, amt, date, st, tol, xb=True) -> Alloc:
     return Alloc(a.item_id, amt, "PARTIAL" if lbl is None else lbl)
 
 
-def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
+def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0, doc=False):
     n = len(rows)
     out = [Alloc(a.item_id, a.amount_cents, "") for a, _, _ in rows]
     date = txn["booking_date"]
@@ -341,13 +348,15 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
     # tarjeta web y recibos domiciliados: nunca DUPLICATE_PAYMENT (0 de 713 k filas ar_dd_batch en TRAIN)
     if inv_idx and all(rows[i][1][1] in st.noexc for i in inv_idx):
         return out
-    # partidas ya cerradas -> DUPLICATE_PAYMENT; el resto entra en el cálculo
-    live = []
+    # partidas ya cerradas -> DUPLICATE_PAYMENT (salvo resolvers de documentos, ver DOC_RESOLVERS); el resto entra en
+    # el cálculo
+    live, closed = [], []
     for i in inv_idx:
         a, info, op = rows[i]
         if op <= 0:
             amt = a.amount_cents if a.amount_cents > 0 else (cash if len(inv_idx) == 1 else info[4])
-            out[i] = Alloc(a.item_id, amt, "DUPLICATE_PAYMENT")
+            out[i] = Alloc(a.item_id, amt, "" if doc else "DUPLICATE_PAYMENT")
+            closed.append(i)
         else:
             live.append(i)
     live_cn = [i for i in cn_idx if rows[i][2] > 0]
@@ -355,7 +364,7 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
         out[i] = Alloc(rows[i][0].item_id, rows[i][2] if rows[i][2] > 0 else rows[i][0].amount_cents, "")
     if not live:
         return out
-    dup_cash = sum(out[i].amount_cents for i in inv_idx if out[i].exception == "DUPLICATE_PAYMENT")
+    dup_cash = sum(out[i].amount_cents for i in closed)
     if dup_cash and len(live) + len(inv_idx) > len(live):
         cash = max(cash - dup_cash, 0) if len(live) else cash
     if all(rows[i][1][1] in st.noexc for i in live):
