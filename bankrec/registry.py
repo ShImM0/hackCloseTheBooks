@@ -23,6 +23,7 @@ CASCADE = [
     "bankrec.resolvers.docs_ap",
     "bankrec.resolvers.docs_remit",
     "bankrec.resolvers.multi_ref",
+    "bankrec.resolvers.multi_ref_fill",   # P1: textos cortados (citadas + suma exacta única)
     # 1:1
     "bankrec.resolvers.text_ref",
     "bankrec.resolvers.amount_match",
