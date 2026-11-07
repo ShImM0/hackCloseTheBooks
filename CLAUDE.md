@@ -65,7 +65,8 @@ try/except: si falla se registra y la cascada sigue. Nunca falta un bank_txn_id.
 `ctx` (`bankrec.phase.Phase`): `name, folder, dir, start, end, txns, items, golden, shared`, `ctx.master("customers")`,
 `ctx.docs("direct_debit_batches")`. `ctx.items` (una fila por item_id): `item_id, item_type, entity, party_id,
 party_name, document_number, issue_date, due_date, currency, total_cents, open_cents, payment_terms, po,
-payment_method, related_document, reason`. `txn` es un dict con las columnas de bank_transactions + `amount_cents`
+payment_method, related_document, reason`. Incluye las abiertas al inicio, las emitidas en la fase y las
+cerradas recientes (`open_cents=0`, 240 días) para RETURNED y DUPLICATE_PAYMENT. `txn` es un dict con las columnas de bank_transactions + `amount_cents`
 (con signo, divisa de la cuenta) y fechas como `date`. `ledger.open[item_id]` = saldo vivo en céntimos.
 
 Importes SIEMPRE en céntimos `int`. Nunca floats para comparar ni sumar.

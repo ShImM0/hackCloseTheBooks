@@ -123,3 +123,17 @@ ap_returned_transfer, ar_new_iban, ar_short_bank_charges…
 - `python -I` ignora `PYTHONIOENCODING`: los CLI hacen `sys.stdout.reconfigure(encoding="utf-8")`.
 - El commit inicial guardó el material del reto con conversión CRLF→LF (PDFs y N43 alterados). Corregido con
   `.gitattributes` (`bankrec-docs-and-masters/** -text`).
+
+## Ledger y fase val
+
+- Reconstrucción a 2025-07-01 (total − Σ golden; RETURNED suma; DUPLICATE_PAYMENT no resta) vs
+  `live/open_items_at_start`: 100 % de los 325.419 ids, 99,70 % con importe exacto. Los 967 distintos son ARI-2021
+  con cobros previos a TRAIN que el golden no ve (solo afecta a val).
+- Sin filtro sobran 237 k partidas cerradas fuera de banco: 222 k emitidas antes de 2021-07 (cobradas antes de
+  TRAIN), 12,7 k facturas anuladas + su ARC "Anulación de factura", 1,9 k restos de ARI parcialmente cobradas.
+  `ledger.open_at` solo conserva las que siguen vivas tras el corte (golden posterior o abiertas en LIVE).
+- El conjunto de candidatas de val es algo optimista: no contiene las partidas cerradas fuera de banco durante
+  2025-H1, que el fichero oficial de LIVE sí contendría.
+- Partidas destino de RETURNED/DUPLICATE_PAYMENT ya cerradas antes del corte: 429 pares en val (219 RETURNED,
+  39 DUPLICATE_PAYMENT), máx. 174 días de antigüedad → `ctx.items` incluye las cerradas de los últimos 240 días.
+- Oráculo (golden como resolver) por el pipeline completo en val: 100,00. El pipeline no pierde nada.

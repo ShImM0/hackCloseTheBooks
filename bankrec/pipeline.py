@@ -85,6 +85,8 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
             if a.item_id in known and a.item_id not in seen and a.amount_cents >= 0:
                 seen.add(a.item_id)
                 allocs.append(a)
+            else:
+                errors[f"alloc_descartada:{prop.resolver}"] += 1
         if prop.allocs and not allocs:
             prop = fallback(txn)
         prop.allocs = allocs

@@ -23,6 +23,7 @@ log = logging.getLogger("bankrec")
 
 ITEM_COLS = ["item_id", "item_type", "entity", "party_id", "party_name", "document_number", "issue_date", "due_date",
              "currency", "total_cents", "payment_terms", "po", "payment_method", "related_document", "reason"]
+CLOSED_DAYS = 240   # ventana de partidas cerradas que se mantienen en ctx.items (open_cents=0)
 
 
 @dataclass
@@ -111,6 +112,13 @@ def build(name: str, months: int | None = None) -> Phase:
             log.warning("%d partidas abiertas sin atributos en fases previas", missing)
         items = pl.concat([before.select(ITEM_COLS + ["open_cents"]),
                            items_here.with_columns(pl.col("total_cents").alias("open_cents"))])
+
+    if name != "sample":
+        # partidas ya cerradas pero recientes (open_cents=0): destino de RETURNED y DUPLICATE_PAYMENT.
+        # En TRAIN la partida más antigua devuelta/duplicada tenía 174 días.
+        pool = items_here if name == "val" else prior
+        recent = pool.filter((pl.col("issue_date") >= start - dt.timedelta(days=CLOSED_DAYS)) & (pl.col("issue_date") < start))
+        items = pl.concat([items, recent.select(ITEM_COLS).with_columns(pl.lit(0, pl.Int64).alias("open_cents"))])
 
     if golden is not None:
         golden = golden.filter(pl.col("bank_txn_id").is_in(txns["bank_txn_id"].implode()))
