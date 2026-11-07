@@ -10,3 +10,4 @@ __pycache__/
 .ipynb_checkpoints/
 ._*
 .claude/settings.local.json
+.claude/worktrees/

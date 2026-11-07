@@ -9,6 +9,8 @@
 | 2026-11-07 11:35 | P1 | refs + parties + ledger FIFO + text_ref + amount_match (1:1 importe exacto) | 39.31 | 38.30 (P 0.997 R 0.249) | — |
 | 2026-11-07 | P4 | auditoría 2023/2024 sin cambiar reglas; val completo + comprobación de ids conocidos | — | 38.29 (P 0.9969 R 0.2492) | sin envío confirmado |
 | 2026-11-07 12:10 | P1 | text_ref.by_ref: referencia + tercero sin importe exacto (+ exceptions P3) | — | 44.35 (P 0.988 R 0.276) | — |
+| 2026-11-07 11:48 | P1 | envío LIVE `envio_live_1148_09b5ddf.csv.gz` (main 09b5ddf; val 60.04) | — | 60.04 | **59.67** |
+| 2026-11-07 12:20 | P1 | ranker LightGBM (último de la cascada, entrena con < ctx.start) | — | 61.23 (P 0.995 R 0.456) | — |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe
