@@ -1,23 +1,21 @@
-"""Enrutado por familia de movimiento. Dueño: P4.
-
-Qué hace: clasifica cada movimiento (nonitem / AR / AP / lote) y lo deja en ctx.shared['router'] para que los demás resolvers se salten lo que no les toca.
-Entradas: txn (dict con las columnas de bank_transactions + amount_cents, booking_date...), ctx (bankrec.phase.Phase),
-          ledger (bankrec.ledger.Ledger, saldo vivo por item_id).
-Salida:   Proposal (bankrec.contract) o None si no aplica (la cascada sigue).
-
-TODO(P4): usar resolve_batch(ctx) vectorizado si conviene; no propone asignaciones.
-"""
+"""Familia orientativa por movimiento, sin proponer asignaciones. Dueño: P4."""
 from __future__ import annotations
 
-from bankrec.contract import Alloc, Proposal  # noqa: F401
+from bankrec.resolvers.nonitem import classify
 
 NAME = "router"
 
 
 def prepare(ctx) -> None:
-    """Indexa una vez por fase; guarda en ctx.shared[NAME]."""
-    return None
-
-
-def resolve(txn: dict, ctx, ledger) -> Proposal | None:
-    return None
+    """Guarda bank_txn_id → nonitem / AR / AP / lote para consulta opcional."""
+    routes = {}
+    for txn in ctx.txns.iter_rows(named=True):
+        code = (txn.get('bank_code') or '').upper()
+        if classify(txn):
+            family = 'nonitem'
+        elif txn['amount_cents'] > 0 and code in {'19', 'NDDT', 'PMNT/RDDT/ESDD', 'PMNT/MCRD/POSC'}:
+            family = 'lote'
+        else:
+            family = 'AR' if txn['amount_cents'] > 0 else 'AP'
+        routes[txn['bank_txn_id']] = family
+    ctx.shared[NAME] = routes

@@ -11,11 +11,12 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 
 import polars as pl
 
 from bankrec import config, phase as phase_mod
-from bankrec.validate import categories, scorer
+from bankrec.validate import categories, scorer, submission_rows
 
 
 def golden_files(phase: str, months):
@@ -24,6 +25,8 @@ def golden_files(phase: str, months):
     start, end = phase_mod.window(phase, months)
     from bankrec import load
     t = load.table(folder, "bank_transactions")
+    if t is None:
+        raise FileNotFoundError(f"No hay bank_transactions en {config.folder_dir(folder)}")
     t = t.filter((pl.col("booking_date") >= start) & (pl.col("booking_date") < end))
     g = load.table(folder, "golden_allocations").filter(pl.col("bank_txn_id").is_in(t["bank_txn_id"].implode()))
     out = config.out_dir(phase)
@@ -49,11 +52,14 @@ def main():
     sub = a.sub or str(config.out_dir(a.phase) / "submission.csv.gz")
     gp, tp, txns, gold = golden_files(a.phase, a.months)
     G = S.load_golden(str(gp), str(tp), config.EXCEPTIONS, categories(a.phase))
-    res = S.score_submission(G, open(sub, "rb").read(), sub)
+    res = S.score_submission(G, Path(sub).read_bytes(), sub)
     if not res["ok"]:
         print(json.dumps(res["errors"], indent=1, ensure_ascii=False))
         sys.exit(1)
     m = res["metrics"]
+    report = config.out_dir(a.phase) / 'metrics.json'
+    report.write_text(json.dumps({'phase': a.phase, 'months': a.months, 'submission': sub,
+                                  **res}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(f"SCORE {res['score']:.2f} | allocF1 {m['allocation_f1']:.4f} (P {m['precision']:.4f} R {m['recall']:.4f}) | "
           f"txnAcc {m['txn_accuracy']:.4f} | excF1 {m['exception_macro_f1']:.4f} | amtAcc {m['amount_weighted_accuracy']:.4f}")
     segs = sorted(res["segments"].items(), key=lambda x: -x[1]["n"] * (1 - x[1]["accuracy"]))
@@ -76,7 +82,7 @@ def _rows_by_txn(df: pl.DataFrame) -> dict:
 def dump(a, sub, txns, gold, G, S):
     """Vuelca fallos: compara (item, importe±tol, excepción) / (categoría, excepción) como el scorer."""
     seg = a.segment
-    pred = pl.read_csv(sub, infer_schema=False)
+    pred = pl.DataFrame(submission_rows(Path(sub).read_bytes()), schema={k: pl.String for k in config.HEADER})
     if seg:
         ids = gold.filter(pl.col("segment") == seg)["bank_txn_id"].unique()
         pred = pred.filter(pl.col("bank_txn_id").is_in(ids.implode()))
@@ -93,9 +99,11 @@ def dump(a, sub, txns, gold, G, S):
             return len(ps) == 1 and not ps[0]["item_id"] and (ps[0]["category"] or "") == gcat and (ps[0]["exception"] or "") == gexc
         pi = {r["item_id"]: r for r in ps if r["item_id"]}
         return len(pi) == len(gi) == len(ps) and all(
-            i in pi and abs(float(pi[i]["amount"]) - ga) <= S._tol(ga) and (pi[i]["exception"] or "") == ge for i, (ga, ge) in gi.items())
+            i in pi and abs(float(pi[i]["amount"].replace(',', '.')) - ga) <= S._tol(ga) and (pi[i]["exception"] or "") == ge for i, (ga, ge) in gi.items())
 
     fails = [t for t in sorted(Gr) if not ok(t)][: a.dump]
+    # Solo se construyen partidas si se solicitaron fallos; no usa el golden para ordenarlas.
+    items = phase_mod.build(a.phase, a.months).items if fails else pl.DataFrame()
     path = config.out_dir(a.phase) / f"failures_{seg or 'all'}.md"
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(f"# Fallos {a.phase} · segmento {seg or 'todos'} ({len(fails)} mostrados)\n\n")
@@ -108,7 +116,33 @@ def dump(a, sub, txns, gold, G, S):
             fh.write(f"- resolver: {au.get('resolver')} ({au.get('confidence')}) {au.get('reason') or ''}\n")
             fh.write("- golden: " + "; ".join(f"{r['item_id'] or r['category']} {r['amount'] or ''} {r['exception'] or ''} [{r['segment']}]" for r in Gr[t]) + "\n")
             fh.write("- pred:   " + "; ".join(f"{r['item_id'] or r['category']} {r['amount'] or ''} {r['exception'] or ''}" for r in P.get(t, [])) + "\n\n")
+            fh.write('- candidatas (heurística por referencia o importe; no implica asignación):\n')
+            for item in candidates(x, items):
+                fh.write(f"  - {item['item_id']} · {item['document_number']} · "
+                         f"total={item['total_cents']} céntimos · saldo inicial={item['open_cents']} céntimos · "
+                         f"{item['currency']} · referencia={item['ref_match']} · Δ={item['gap']} céntimos\n")
+            fh.write('\n')
     print(f"{len(fails)} fallos -> {path}")
+
+
+def candidates(txn, items, limit=5):
+    """Diagnóstico acotado: referencias o importe cercano, sin leer etiquetas."""
+    from bankrec.refs import norm
+    if items.is_empty() or not txn:
+        return []
+    text = norm(' '.join(txn.get(k) or '' for k in ('text', 'ref1', 'ref2', 'remittance_info', 'end_to_end_id')))
+    amount = abs(txn['amount_cents'])
+    pool = items.filter((pl.col('entity') == txn['entity']) &
+                        (pl.col('currency') == txn['currency']) &
+                        (pl.col('issue_date') <= txn['booking_date']))
+    found = []
+    for r in pool.iter_rows(named=True):
+        ref = norm(r.get('document_number'))
+        match = len(ref) >= 6 and ref in text
+        gap = min(abs(amount - (r.get(k) or 0)) for k in ('total_cents', 'open_cents'))
+        if match or gap <= max(1, amount // 200):
+            found.append({**r, 'ref_match': match, 'gap': gap})
+    return sorted(found, key=lambda r: (not r['ref_match'], r['gap'], r['issue_date'], r['item_id']))[:limit]
 
 
 if __name__ == "__main__":

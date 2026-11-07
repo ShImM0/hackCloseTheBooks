@@ -1,23 +1,115 @@
-"""Movimientos sin partida (categoría). Dueño: P4.
+"""Categorías sin partida por señales bancarias explícitas. Dueño: P4.
 
-Qué hace: asigna category de categories.csv: comisiones, nómina, cash pool, impuestos, reversos...
-Entradas: txn (dict con las columnas de bank_transactions + amount_cents, booking_date...), ctx (bankrec.phase.Phase),
-          ledger (bankrec.ledger.Ledger, saldo vivo por item_id).
-Salida:   Proposal (bankrec.contract) o None si no aplica (la cascada sigue).
-
-TODO(P4): reglas por bank_code/texto; UNIDENTIFIED solo si es un cobro sin partida (precisión!).
+No usa golden ni convierte cobros genéricos en UNIDENTIFIED: las señales
+ambiguas siguen hacia los resolvers de partidas.
 """
 from __future__ import annotations
 
-from bankrec.contract import Alloc, Proposal  # noqa: F401
+from collections import defaultdict
+import re
+import unicodedata
+
+from bankrec.contract import Proposal
 
 NAME = "nonitem"
 
 
+def normalized(value: str) -> str:
+    """Normaliza acentos y cortes de concepto N43 sin perder palabras."""
+    value = unicodedata.normalize("NFKD", value or "")
+    return " ".join("".join(c for c in value if not unicodedata.combining(c)).upper().replace(" | ", " ").split())
+
+
+def classify(txn: dict) -> tuple[str, str] | None:
+    """Devuelve categoría y evidencia; None conserva la cascada de partidas."""
+    code = (txn.get("bank_code") or "").upper()
+    text = normalized(" ".join(txn.get(k) or "" for k in ("text", "remittance_info")))
+    amount = txn["amount_cents"]
+    credit = amount > 0
+
+    def hit(pattern):
+        return re.search(pattern, text) is not None
+
+    category = ""
+    if hit(r"ANULACION OPERACION INDEBIDA|BANK ERROR REVERSAL|REVERSAL OF BANK ERROR"):
+        category = "BANK_REVERSAL"
+    elif hit(r"DEVOLUCION PAGO DUPLICADO|REFUND DUPLICATE PAYMENT") and not credit:
+        category = "CUSTOMER_REFUND"
+    elif hit(r"ABONO PAGO DOBLE|REEMBOLSO PAGO DUPLICADO") and credit:
+        category = "SUPPLIER_REFUND"
+    # Las palabras de categoría pueden ser el servicio facturado o una deducción.
+    # Un código bancario aislado no basta: DATA_DICTIONARY avisa de inconsistencias.
+    elif hit(r"\bFACTURA\b|\bINVOICE\b|\bFACT\.\s|\bDEDUCIR\b|\bDEDUCCION\b|\bDEDUCTION\b|\bMENOS PROFORMA\b"):
+        return None
+    elif hit(r"CASH ?POOL|ZBA SWEEP|ZERO BALANCING|NIVELACION SALDO"):
+        category = "CASH_POOL"
+    elif hit(r"INTRAGRUPO|INTERCOMPANY|\b(?:FINANCIACION|PRESTAMO|TRANSF\.) IC\b"):
+        category = "INTERCOMPANY"
+    elif hit(r"TRASPASO (?:A|DE) CTA\b|TRANSFER BETWEEN OWN ACCOUNTS"):
+        category = "INTERNAL_TRANSFER"
+    elif hit(r"\bNOMINAS?\b|\bPAYROLL\b|SALARY PAYMENT"):
+        if not credit:
+            category = "PAYROLL"
+    elif hit(r"SEGURIDAD SOCIAL|SOCIAL CHARGES|\bURSSAF\b|SOZIALVERSICHERUNG"):
+        if not credit:
+            category = "SOCIAL_SECURITY"
+    elif hit(r"\bIMPUESTOS?\b|\bTAX (?:PAYMENT|REFUND)\b|\bVAT RETURN\b|DEVOLUCION (?:IVA|HACIENDA)"):
+        category = "TAX_REFUND" if credit else "TAX_PAYMENT"
+    elif hit(r"LIQUIDACION (?:DE )?INTERESES|INTEREST (?:CREDIT|DEBIT|SETTLEMENT|PAYMENT)") and not hit(r"COMISION"):
+        category = "INTEREST_INCOME" if credit else "INTEREST_EXPENSE"
+    elif hit(r"\bCOMISION(?:ES)?\b|\bCOM\. |FRAIS VIREMENT|MAINTENANCE FEE|SERV\. EM\. TRANSF\."):
+        if not credit:
+            category = "BANK_FEES"
+    elif hit(r"\bCUOTA (?:LEASING|RENTING|ARRENDAMIENTO|LSG)\b"):
+        if not credit:
+            category = "LEASING"
+    elif hit(r"AMORTIZACION DE PRESTAMO|LOAN REPAYMENT"):
+        if not credit:
+            category = "LOAN_REPAYMENT"
+    elif hit(r"DISPOSICION (?:DE )?PRESTAMO|LOAN DRAWDOWN"):
+        if credit:
+            category = "LOAN_DRAWDOWN"
+    elif hit(r"COMPRAVENTA (?:DE )?DIVISA|LIQUIDACION (?:DE )?FORWARD|FX DEAL|FX FORWARD"):
+        category = "FX_DEAL"
+    elif hit(r"ADEUDO MENSUAL DE TARJETA|LIQUIDACION TARJETAS DE EMPRESA|CORPORATE CARD"):
+        if not credit:
+            category = "CARD_EXPENSES"
+    elif hit(r"PRIMA (?:DE )?SEGURO|INSURANCE PREMIUM"):
+        if not credit:
+            category = "INSURANCE"
+    elif hit(r"\bPROFORMA\b"):
+        if credit:
+            category = "CUSTOMER_ADVANCE"
+    return (category, f"bank_code={code}; concepto={text[:160]}") if category else None
+
+
 def prepare(ctx) -> None:
-    """Indexa una vez por fase; guarda en ctx.shared[NAME]."""
-    return None
+    """Identifica también el apunte original de una anulación inequívoca."""
+    by_amount = defaultdict(list)
+    reversals = []
+    for txn in ctx.txns.iter_rows(named=True):
+        by_amount[(txn['account_id'], txn['currency'], txn['amount_cents'])].append(txn)
+        if 'ANULACION OPERACION INDEBIDA' in normalized(txn.get('text')):
+            reversals.append(txn)
+    paired = set()
+    for rev in reversals:
+        text = normalized(rev.get('text'))
+        candidates = [t for t in by_amount[(rev['account_id'], rev['currency'], -rev['amount_cents'])]
+                      if 0 <= (rev['booking_date'] - t['booking_date']).days <= 7
+                      and normalized(t.get('text'))
+                      and text.endswith(normalized(t.get('text')))
+                      and t['bank_txn_id'] != rev['bank_txn_id']]
+        if len(candidates) == 1:
+            paired.update((rev['bank_txn_id'], candidates[0]['bank_txn_id']))
+    ctx.shared[NAME] = paired
 
 
 def resolve(txn: dict, ctx, ledger) -> Proposal | None:
-    return None
+    if txn['bank_txn_id'] in ctx.shared.get(NAME, set()):
+        result = ('BANK_REVERSAL', 'Anulación explícita y original único por cuenta, divisa, importe, fecha y concepto')
+    else:
+        result = classify(txn)
+    if result is None:
+        return None
+    category, reason = result
+    return Proposal(txn['bank_txn_id'], category=category, confidence=0.9, resolver=NAME, reason=reason)

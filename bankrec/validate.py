@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import argparse
 import csv
-import gzip
 import importlib.util
 import io
+import re
 import sys
 from pathlib import Path
 
@@ -36,11 +36,24 @@ def phase_txn_ids(phase: str, months: int | None = None) -> list[str]:
     from bankrec.phase import window
     start, end = window(phase, months)
     t = load.table(config.PHASES[phase][0], "bank_transactions")
+    if t is None:
+        raise FileNotFoundError(f"No hay bank_transactions para {phase} en {config.folder_dir(config.PHASES[phase][0])}")
     return t.filter((pl.col("booking_date") >= start) & (pl.col("booking_date") < end))["bank_txn_id"].to_list()
 
 
 def categories(phase: str) -> list[str]:
     return load.master("categories", phase)["category"].to_list()
+
+
+def submission_rows(data: bytes) -> list[dict[str, str]]:
+    """Lee las variantes aceptadas por el scorer; llamar después de validar."""
+    raw = scorer()._inflate(data) if data[:2] == b"\x1f\x8b" else data
+    stream = io.StringIO(raw.decode("utf-8-sig"), newline="")
+    first = stream.readline()
+    delim = ";" if first.count(";") >= 4 and first.count(",") < 4 else ","
+    header = [h.strip().lower() for h in next(csv.reader([first], delimiter=delim))]
+    return [{k: (row[i] if i < len(row) else "").strip() for i, k in enumerate(header)}
+            for row in csv.reader(stream, delimiter=delim) if row and any(c.strip() for c in row)]
 
 
 def validate(path: Path, phase: str, txn_ids: list[str] | None = None, known_items: set[str] | None = None) -> tuple[list[str], list[str]]:
@@ -51,7 +64,10 @@ def validate(path: Path, phase: str, txn_ids: list[str] | None = None, known_ite
     ids = txn_ids if txn_ids is not None else phase_txn_ids(phase)
     g.txns = {t: ({}, "", "", "unlabelled") for t in ids}
     g.weight = {t: 1.0 for t in ids}
-    data = Path(path).read_bytes()
+    try:
+        data = Path(path).read_bytes()
+    except OSError as exc:
+        return [f"No se pudo leer {path}: {exc}"], []
     res = S.score_submission(g, data, str(path))
     errors = [f"fila {e['row']}: {e['message']}" for e in res["errors"]]
     warnings: list[str] = []
@@ -59,12 +75,11 @@ def validate(path: Path, phase: str, txn_ids: list[str] | None = None, known_ite
         m = res["metrics"]
         if m["txns_covered"] != m["txns_total"]:
             errors.append(f"cubre {m['txns_covered']} de {m['txns_total']} movimientos")
-        raw = gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
-        rd = csv.DictReader(io.StringIO(raw.decode("utf-8-sig"), newline=""))
+        rd = submission_rows(data)
         bad_dec, unknown = 0, 0
         for r in rd:
             a = r["amount"]
-            if a and (len(a) < 4 or a[-3] != "."):
+            if a and not re.fullmatch(r"\d+[.,]\d{2}", a):
                 bad_dec += 1
             if known_items is not None and r["item_id"] and r["item_id"] not in known_items:
                 unknown += 1
