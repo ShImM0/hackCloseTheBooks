@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(uv run *)",
+      "Bash(uv sync*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git pull*)"
+    ],
+    "deny": [
+      "Bash(*upload-url*)",
+      "Bash(*submit.py*)",
+      "Bash(git push *--force*)",
+      "Read(**/.env)"
+    ]
+  }
+}
