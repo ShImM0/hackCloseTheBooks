@@ -1,0 +1,9 @@
+* text=auto eol=lf
+# Material del reto: se guarda tal cual, sin convertir saltos de línea (N43 es latin-1 + CRLF, 80 bytes/registro)
+bankrec-docs-and-masters/** -text
+*.n43 -text
+*.sta -text
+*.xml -text
+*.gz binary
+*.pdf binary
+*.xlsx binary
