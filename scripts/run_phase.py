@@ -6,10 +6,17 @@ Salidas: out/<fase>/submission.csv.gz y out/<fase>/audit.parquet; tiempos por re
 """
 import argparse
 import logging
+import os
+import subprocess
 import sys
 
-from bankrec import config, pipeline
-from bankrec.validate import phase_txn_ids, validate
+# Determinismo: el orden de los set/dict de str depende de PYTHONHASHSEED y cambiaba ~2.700 movimientos de LIVE entre
+# dos ejecuciones del mismo commit. Se relanza el proceso con semilla fija (antes de importar bankrec).
+if __name__ == "__main__" and os.environ.get("PYTHONHASHSEED") != "0":
+    sys.exit(subprocess.call([sys.executable, *sys.argv], env={**os.environ, "PYTHONHASHSEED": "0"}))
+
+from bankrec import config, pipeline  # noqa: E402
+from bankrec.validate import phase_txn_ids, validate  # noqa: E402
 
 
 def main():
