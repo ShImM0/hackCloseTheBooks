@@ -113,6 +113,9 @@ uv run python -m bankrec.validate out/live/submission.csv.gz --phase live
 Ensayado a las 13:55 y a las 16:44 (con el arreglo de ZA01) usando LIVE como FINAL: válido y sin errores; 3-6 min según la carga del portátil.
 Lo ejecuta P1. P4 hace a la vez lo mismo en su portátil como respaldo: mismo commit, mismos pasos.
 
+0. **Código de FINAL = etiqueta `final` (`3956fad`, val 94,07, LIVE 93,83).** En los dos portátiles:
+   `git fetch --tags && git checkout final && uv sync`. Lo que se subió a main después (P3: b0ad505, 67e72d3,
+   0130440, 69d902a) NO está medido y NO entra.
 1. **17:45**: congelar main. Último commit medido en val y en LIVE, anotado en `docs/SCOREBOARD.md`. Nadie hace push
    después sin avisar a P1.
 2. **18:00**: descargar y descomprimir FINAL en `<data_dir>/final/`. Deben existir
@@ -136,7 +139,9 @@ Lo ejecuta P1. P4 hace a la vez lo mismo en su portátil como respaldo: mismo co
    - avisos «partidas abiertas sin historial»: normales para ZA01, que toma los atributos del propio fichero;
      masivos en otras entidades = algo raro;
    - ningún aviso «FINAL sin final/masters_final/» ni «fx_rates llega solo hasta…»;
-   - `fallback` < 1 %.
+   - `fallback` < 1 %;
+   - ninguna línea «falló» ni «se desactiva» (sobre todo `ranker`: si faltan datos de TRAIN se desactiva y el
+     fichero sale peor sin error visible).
 7. Preparar el fichero (P4, a mano): `scripts/submit.py out/final/submission.csv.gz --phase final`.
    Comparar con el portátil de respaldo el SHA-256 del contenido descomprimido (ver «Ciclo de envíos»).
    `subset_sum` aún no es 100 % reproducible: si difieren pocas filas, vale el de P1. Subir **una vez**. Una validación rechazada no gasta el envío.
