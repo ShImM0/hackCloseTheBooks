@@ -87,3 +87,9 @@
 | 58 | `ar_card_chargeback` | ~31 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |
 | 59 | `nonitem_interest_expense` | ~28 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |
 | 60 | `ar_1to1_remittance` | ~5 | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |- 2026-11-07 17:41 · P1 · val main 3956fad (P2: subset_sum preciso, multi_ref, docs_ap, docs_dd reproducibles; P3: GRACE_DAYS=3 y revisión de excepciones; P4: SARS/UIF) = **94.07** (P 0.997 R 0.891; txnAcc 0.955; excF1 0.920). Candidato #12: `candidato_live_1741_3956fad.csv.gz`, SHA contenido `cafc53765ad43507…`.
+- 2026-11-07 17:57 · P2 · val limpio (run en exclusiva, 6 meses) de los commits de P2 1923692…c9cb6c3 sobre 80e6ef8 = **94.08**
+  (P 0.997 R 0.890; txnAcc 0.955; excF1 0.920) frente a 92.31 de 80e6ef8 (P1). val limpio de main 69d902a (con n:m de P3) = **94.14**
+  (P 0.997 R 0.890; txnAcc 0.955; excF1 0.923). Las caídas vistas por P1 no se reproducen: en ambos runs ap_confirming 0.971,
+  ap_factored 0.992, ap_fx 0.995, ar_1toN_text 0.921, ar_n_to_m 0.456 → 0.460 (único cambio > 0,01: ar_short_bank_charges 0.781 → 0.846).
+  Pendiente (sin medir, no entra en FINAL): `_CF_EXTRA`/`_CF_COMBOS` de docs_ap en 2024; ventana FIFO neta de abonos (P3_NOTES).
+  Descartados con `--months 1` (95.15 base): multi_ref nombres cortos +0.01 y subset_sum facturas−abonos +0.01 (pares nuevos 81 %).
