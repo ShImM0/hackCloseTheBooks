@@ -110,7 +110,7 @@ uv run python -m bankrec.validate out/live/submission.csv.gz --phase live
 
 ## FINAL: guía de pasos (18:00 → 19:30, un único envío puntuado)
 
-Ensayado a las 13:55 con los datos de LIVE haciendo de FINAL: 3 min 20 s, fichero válido, sin errores.
+Ensayado a las 13:55 y a las 16:44 (con el arreglo de ZA01) usando LIVE como FINAL: válido y sin errores; 3-6 min según la carga del portátil.
 Lo ejecuta P1. P4 hace a la vez lo mismo en su portátil como respaldo: mismo commit, mismos pasos.
 
 1. **17:45**: congelar main. Último commit medido en val y en LIVE, anotado en `docs/SCOREBOARD.md`. Nadie hace push
@@ -125,7 +125,7 @@ Lo ejecuta P1. P4 hace a la vez lo mismo en su portátil como respaldo: mismo co
    Maestros de FINAL: deben incluir ZA01 y tipos de cambio de 2026.
    `uv run python -c "from bankrec import load; c=load.master('customers','final'); f=load.master('fx_rates','final'); print((c['entity']=='ZA01').sum(), f['date'].max())"`
    Debe dar más de 0 clientes de ZA01 y una fecha de 2026-06. Si no, revisar la ruta `final/masters_final/`.
-   Borrar cachés de ensayos: `_cache/ranker_final_*` y `_cache/pdf_text_final.parquet`, si existen.
+   Borrar cachés de ensayos: `_cache/ranker_final_*`, `_cache/pdf_text_final.parquet` y `_cache/remit_v2_final_*`, si existen.
 4. **Precalentar los PDFs** (multiproceso): `uv run python -m bankrec.pdf_text final`
    Si el portátil va justo de memoria, cerrar otros procesos antes: lanza un proceso por núcleo.
 5. **Ejecutar**: `uv run python scripts/run_phase.py --phase final` → `out/final/submission.csv.gz` + `VALIDO`.
