@@ -97,3 +97,4 @@
 | 2026-11-07 14:01 | P4 | `1eed3ec` | main completo (incluye `docs_card` cheques/lockbox de P2) | — → **71.38** | UNIDENTIFIED F1 0.859; txnAcc 0.881; precisión de asignación 0.903 (`subset_sum` 61 % de acierto: ver `reports/P4_QA.md`) |
 
 - 2026-11-07 15:00 · P1 · val main c21c984 (docs_remit de P2 nuevo) = **85.73** (P 0.954 R 0.791; excF1 0.733). docs_remit 160.305 pares, 100 % correctos.
+- 2026-11-07 15:10 · P1 · val main 9f7b6c5 (+ 1d8f290 de P4) = 85.63 (−0.10 frente a c21c984; P 0.954→0.951). Envío LIVE desde c21c984.
