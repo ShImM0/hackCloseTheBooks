@@ -106,11 +106,14 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
         p = text_ref.by_ref(txn, ctx, ledger)
     if p is None:
         p = by_ratio(txn, ctx, ledger)
-    if p is None:
+    if p is None and DUP_ENABLED:
         p = duplicate(txn, ctx, ledger)
     return p
 
 
+# Desactivado: en val sube 65,87 -> 67,70 (P 0,98), pero en LIVE bajó 65,09 -> 64,93 (envío de 572e36e).
+# No generaliza y no sabemos por qué: no se usa hasta entenderlo.
+DUP_ENABLED = False
 DUP_DAYS = 60      # en TRAIN 2024 el p99 entre el pago y su duplicado es 49 días
 
 

@@ -23,7 +23,7 @@ log = logging.getLogger("bankrec")
 
 _BATCH = re.compile(r"LOCKBOX|REMISE|CHEQUE|CHQ|CARD SETTLEMENT|LIQUIDACION TPV|ABONO TPV|\bCB\b|DEPOSIT")
 KNOWN_PARTY = 90      # fallback: cobro de un cliente reconocible = casi seguro tiene partidas (1:N no resuelto)
-OVERPAY_MAX = 1.35    # efectivo/saldo: p99 de los OVERPAYMENT reales en TRAIN es 1,33; por encima es un 1:N incompleto
+OVERPAY_MAX = 1.11    # efectivo/saldo: en TRAIN los OVERPAYMENT reales son +1 % o +10 % (p90 1,10); más = 1:N incompleto
 
 
 def fallback(txn: dict, ctx=None) -> Proposal:
