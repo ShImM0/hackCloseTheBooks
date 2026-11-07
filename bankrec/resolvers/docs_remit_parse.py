@@ -170,7 +170,7 @@ def parse_xlsx(path: Path) -> dict | None:
 def _amounts(nums: list[str]) -> tuple[int, int, int] | None:
     """(bruto, deducción, pagado) con columnas en cualquier orden: la deducción es la cifra negativa de una factura.
     Una nota de crédito (bruto < 0) repite su importe como pagado. Con dos cifras positivas y la segunda menor
-    (columna de deducción en blanco: 'NF0125007817 18/04/2025 41,703.70 37,533.33') la deducción es la diferencia."""
+    (columna de deducción en blanco: '<doc> <fecha> 1,000.00 900.00') la deducción es la diferencia."""
     v = [to_cents(n) for n in nums]
     if any(x is None for x in v) or not v:
         return None
@@ -267,10 +267,19 @@ def _page_lines(page) -> str:
 
 def parse_pdf(path: Path) -> dict | None:
     import pymupdf   # 'fitz' está obsoleto en PyMuPDF 2.x
+    # sin mensajes de MuPDF por stderr: en un worker de Windows sin consola escribir en él mata el proceso
+    # (BrokenProcessPool) y el parseo acaba en serie
+    pymupdf.TOOLS.mupdf_display_errors(False)
+    pymupdf.TOOLS.mupdf_display_warnings(False)
     with pymupdf.open(path) as doc:
         text = "\n".join(_page_lines(p) for p in doc)
     payer = next((ln.strip() for ln in text.splitlines()[1:3] if ln.strip()), "")
     return _from_text(text, path.name, payer)
+
+
+def parse_many(paths: list[str]) -> list:
+    """Worker de docs_remit (multiproceso): vive aquí para que el proceso hijo no importe polars ni el resto."""
+    return [parse_file(Path(p)) for p in paths]
 
 
 def parse_file(path: Path) -> dict | None:
