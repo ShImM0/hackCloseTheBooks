@@ -61,7 +61,7 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     if len(scored) > 1 and scored[1][0] == scored[0][0]:
         return None
     s, c = scored[0]
-    return Proposal(txn["bank_txn_id"], [Alloc(c, abs(txn["amount_cents"]))], confidence=s / 100,
+    return Proposal(txn["bank_txn_id"], [Alloc(c, ledger.open[c])], confidence=s / 100,
                     reason=f"ref {ledger.info[c][5]} ({s}) + importe")
 
 
