@@ -32,6 +32,7 @@ CASCADE = [
     "bankrec.exceptions_amounts",   # P3: si aún no existe, registry.load lo omite con aviso
     "bankrec.resolvers.subset_sum",
     "bankrec.resolvers.ranker",
+    "bankrec.resolvers.multi_ref_cited",     # P1: solo las citadas inequívocas de un cobro mayor (concepto cortado)
     "bankrec.resolvers.nonitem_unmatched",   # P4: último paso, decide UNIDENTIFIED vs categoría
 ]
 

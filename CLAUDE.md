@@ -203,6 +203,12 @@ Val (TRAIN 2025-01..06) es una aproximación optimista, no el objetivo.
 
 ## Estado y siguientes pasos por rol (noche del 7-nov, tras FINAL)
 
+**ÚLTIMO ENVÍO FINAL (cierre 19:30; nosotros 19:15)**
+- Candidato: `5fde967` (P1) → backtest 2025-H1 94,01 → 95,01 y 2024-H1 94,64 → 95,54. P1 genera FINAL con él.
+- Solo entra otro cambio si está en main **antes de las 19:00** con su backtest 2025-H1 (y 2024-H1 si da tiempo)
+  mejor que 95,01 en el mensaje del commit. Avisa a P1. Lo que llegue después no entra.
+- P4: subir a LIVE `out/bt_p1b_live/live/submission.csv.gz` del portátil de P1 como confirmación (no gasta FINAL).
+
 **Dónde estamos**
 - FINAL = etiqueta `final` (`3956fad`): val 94,07 · LIVE 93,83 (puesto 8). El primero del ranking: 96,38.
 - `7a8701e` (incluye `5e5a0d1`: subset_sum/multi_ref_fill/ranker se abstienen ante ambigüedad): val 94,01
