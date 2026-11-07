@@ -21,6 +21,7 @@
 | 2026-11-07 12:50 | P1 | registry: + nonitem_unmatched (P4) al final, sobre main d145a0d | — | 65.87 (P 0.995 R 0.493; excF1 0.410; UNIDENTIFIED F1 0.55) | — |
 | 2026-11-07 12:24 | P1 | envío LIVE `envio_live_1224_2b8c623.csv.gz` (val 65.87) | — | 65.87 | **65.09** |
 | 2026-11-07 12:45 | P1 | amount_match.duplicate: DUPLICATE_PAYMENT (mismo tercero, mismo importe, partida cerrada ≤ 60 días) | — | 67.70 (excF1 0.495) | — |
+| 2026-11-07 12:40 | P4 | fichero LIVE `out/live/envio_live_1240_572e36e.csv.gz` (merge dc21ea5 = código de main 572e36e, `scripts/run_phase.py --phase live`; smoke verde); VALIDO con comprobación de item_id; 203.083 movimientos, 411.137 filas, 4,2 MB; 3 min 49 s; SHA-256 `64e2a06c4b25019235ab0e38871f1c40ca81e2a5ef5d8ab13519e778f2ce5515` | 63.82 | 67.70 (medido por P1 en 572e36e) | pendiente (envío manual) |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe
