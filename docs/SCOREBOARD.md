@@ -12,6 +12,7 @@
 | 2026-11-07 11:48 | P1 | envío LIVE `envio_live_1148_09b5ddf.csv.gz` (main 09b5ddf; val 60.04) | — | 60.04 | **59.67** |
 | 2026-11-07 12:20 | P1 | ranker LightGBM (último de la cascada, entrena con < ctx.start) | — | 61.23 (P 0.995 R 0.456) | — |
 | 2026-11-07 12:00 | P1 | anuladas fuera (§5.7), sustitutas por alias, N43 cortado, prefijos estrictos, ref de otra factura bloquea amount_match | — | 62.04 (P 0.995 R 0.460) | — |
+| 2026-11-07 12:08 | P1 | main c4f389b completo (incluye exceptions_amounts de P3); fichero `out/live/envio_live_1201_c4f389b.csv.gz` | — | 63.39 (P 0.995 R 0.464) | pendiente |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe
