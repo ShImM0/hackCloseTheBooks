@@ -27,7 +27,9 @@ from __future__ import annotations
 
 import bisect
 import datetime as dt
+import itertools
 import logging
+import math
 import re
 
 import polars as pl
@@ -51,7 +53,8 @@ _RETURN_DAYS = 45                   # una transferencia rechazada vuelve en día
 # proveedor, §4 SUPPLIER_REFUND o §5.9 APC)
 _RET_CODE = re.compile(r"\b(?:AC|AG|AM|BE|MD|MS|RC|RR|FF|DT|SL)\d{2}\b")
 _SLACK = 7                          # días entre la ejecución y el cargo en banco
-_CF_EXTRA = 3                       # confirming: beneficiarios de más en el pool que se pueden descartar por suma
+_CF_EXTRA = 6                       # confirming: beneficiarios de más en el pool que se pueden descartar por suma
+_CF_COMBOS = 1_000_000              # ... si las combinaciones posibles no pasan de esto (riesgo de una suma casual única)
 _CF_DAYS = 3                        # confirming: vencimiento en fin de semana/festivo -> cargo el siguiente día hábil
 _FX_BAND = 0.03                     # §3: el cambio del banco queda "well within the 3 % FX tolerance"
 
@@ -271,7 +274,7 @@ def prepare(ctx) -> None:
     #       beneficiarios aún libres cuyo vencimiento (máx. de sus documentos) cae entre el cargo anterior del mismo
     #       run y este (fin de semana o festivo: se carga el siguiente día hábil; sin cargo anterior, _CF_DAYS días).
     #       Si son exactamente N y suman el cargo, son esos (vale con runs de > 28 beneficiarios, donde no se intenta
-    #       el subconjunto; también con todo lo vencido, para el primer cargo del run); si sobran ≤ _CF_EXTRA, se quitan
+    #       el subconjunto; también con todo lo vencido, para el primer cargo del run); si sobran ≤ _CF_EXTRA (pagos con retraso), se quitan
     #       los que suman el exceso (solución única); si faltan, el resto sale de vencimientos atrasados (subconjunto
     #       exacto). Los beneficiarios con todas sus partidas cerradas al inicio de la fase ya se pagaron: no entran.
     #    b) el resto: N beneficiarios cuyo importe suma el cargo (subconjunto), ampliando la ventana de vencimientos.
@@ -365,32 +368,32 @@ def _name_hit(txt: str | None, name: str | None) -> int:
 
 
 def _drop_extra(pool: list, n: int, amt: int) -> list | None:
-    """Confirming (POLICIES §5.3): pool con unos pocos beneficiarios de más (vencidos que se pagan en otro cargo):
-    quita los `len(pool) - n` (≤ _CF_EXTRA) cuya suma es el exceso sobre el cargo. Solo si la solución es única."""
+    """Confirming (POLICIES §5.3): pool con unos pocos beneficiarios de más (vencidos que se pagan en otro cargo, con
+    retraso): quita los `len(pool) - n` (≤ _CF_EXTRA, con ≤ _CF_COMBOS combinaciones) cuya suma es el exceso sobre el
+    cargo. Solo si la solución es única."""
     k = len(pool) - n
-    if not n or not 1 <= k <= _CF_EXTRA:
+    if not n or not 1 <= k <= _CF_EXTRA or math.comb(len(pool), k) > _CF_COMBOS:
         return None
     excess = sum(g[1] for g in pool) - amt
     if excess <= 0:
         return None
     vals = [g[1] for g in pool]
-    pos: dict[int, list[int]] = {}
-    for i, v in enumerate(vals):
-        pos.setdefault(v, []).append(i)
-    sols: set[tuple] = set()
-    if k == 1:
-        sols = {(i,) for i in pos.get(excess, [])}
-    for i in range(len(vals) if k > 1 else 0):       # k = 2: pares por suma; k = 3: O(n²) con índice por importe
-        if k == 2:
-            sols |= {(i, j) for j in pos.get(excess - vals[i], []) if j > i}
-        else:
-            for j in range(i + 1, len(vals)):
-                sols |= {(i, j, m) for m in pos.get(excess - vals[i] - vals[j], []) if m > j}
-        if len(sols) > 1:
-            return None
+    # meet-in-the-middle con subconjuntos de tamaño <= k en cada mitad; se para en la segunda solución
+    h = len(vals) // 2
+    right: dict[tuple[int, int], list[tuple]] = {}
+    for s in range(k + 1):
+        for c in itertools.combinations(range(h, len(vals)), s):
+            right.setdefault((s, sum(vals[i] for i in c)), []).append(c)
+    sols: list[tuple] = []
+    for s in range(k + 1):
+        for c in itertools.combinations(range(h), s):
+            for r in right.get((k - s, excess - sum(vals[i] for i in c)), ()):
+                sols.append(c + r)
+                if len(sols) > 1:
+                    return None
     if len(sols) != 1:
         return None
-    drop = set(next(iter(sols)))
+    drop = set(sols[0])
     return [g for i, g in enumerate(pool) if i not in drop]
 
 
