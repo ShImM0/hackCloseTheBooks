@@ -12,7 +12,7 @@ importe y pone excepción e importe de salida. Va DESPUÉS de amount_match (el s
 Segunda etapa (tercero primero): si el tercero se identifica (nombre/IBAN, único) se buscan en SUS facturas las formas
 de cobro que ningún otro resolver ve, por este orden: saldo exacto (también en divisa distinta vía orig_amount), duplicado
 (factura ya cobrada por el total), plazo/retención/anticipo del PDF, parcial (fracción redonda del saldo), gastos
-bancarios (10-71 unidades y ≤ 2 %), sobrepago exacto (+1..100 unidades enteras, +1 % o +10 %; factura única) y
+bancarios (8-60 EUR equivalentes y ≤ 2 %), sobrepago exacto (+1..100 unidades enteras, +1 % o +10 %; factura única) y
 sobrepago (única factura abierta del tercero, misma forma de exceso).
 
 Colocación en registry.CASCADE: justo después de "bankrec.resolvers.amount_match".
@@ -21,10 +21,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+import polars as pl
+
 from bankrec import parties
 from bankrec.contract import Alloc, Proposal
-from bankrec.exceptions import (cross_border, overpay_shape, PARTIAL_FRACS, DISPUTE_FRACS, WH_BPS, _plan,
-                                _state)
+from bankrec.exceptions import (cross_border, overpay_shape, BC_MAX_EUR, BC_MAX_PCT, PARTIAL_FRACS, DISPUTE_FRACS,
+                                WH_BPS, _plan, _state)
 from bankrec.resolvers.amount_match import MARGIN, NAME_MIN
 
 NAME = "short_cash"
@@ -71,6 +73,18 @@ def prepare(ctx) -> None:
             for a, _, _ in _plan(st.item_facts(iid)):
                 fidx[(m[0], m[3], a)].append((iid, m[1], m[2]))
     ctx.shared[NAME + "_facts"] = fidx
+    # factura − su abono (ARC.related_document = nº de la ARI, mismo tercero/entidad/divisa): efectivo neto -> par
+    ari = ctx.items.filter(ctx.items["item_type"] == "ARI").select("item_id", "entity", "party_id", "document_number",
+                                                                    "currency", "issue_date", "total_cents")
+    arc = ctx.items.filter((ctx.items["item_type"] == "ARC") & ctx.items["related_document"].is_not_null()).select(
+        pl.col("item_id").alias("arc"), "entity", "party_id", pl.col("related_document").alias("document_number"),
+        "currency", pl.col("issue_date").alias("arc_issue"), pl.col("total_cents").alias("arc_total"))
+    nidx: dict[tuple, list] = defaultdict(list)
+    for r in ari.join(arc, on=["entity", "party_id", "document_number", "currency"]).iter_rows(named=True):
+        if r["total_cents"] and r["arc_total"] and r["total_cents"] > r["arc_total"] and r["issue_date"]:
+            nidx[(r["entity"], r["currency"], r["total_cents"] - r["arc_total"])].append(
+                (r["item_id"], r["arc"], r["party_id"], max(r["issue_date"], r["arc_issue"] or r["issue_date"])))
+    ctx.shared[NAME + "_net"] = nidx
 
 
 def candidates(txn: dict, ctx, ledger) -> list[tuple]:
@@ -91,6 +105,7 @@ def candidates(txn: dict, ctx, ledger) -> list[tuple]:
     return out
 
 
+BC_MIN_EUR = 8.0   # gastos bancarios mínimos (EUR equivalentes): en TRAIN el menor es 8,8
 PARTIAL_SET = sorted(set(PARTIAL_FRACS + DISPUTE_FRACS + [0.95, 0.98, 0.99]))
 SHAPE_RANK = {"exacto": 0, "duplicado": 1, "plan PDF": 2, "sobrepago exacto": 3, "parcial": 4, "gastos": 5,
               "sobrepago": 6}
@@ -146,7 +161,10 @@ def _shapes(txn, ctx, ledger, pid) -> tuple[str, str, int] | None:
             if c < o - 1 and any(abs(c - round(o * fr)) <= 1 for fr in PARTIAL_SET):
                 hits[4].append((iid, "parcial", c))
             fee = o - c
-            if xb and 900 <= fee <= min(0.02 * o, 8000) and cur == tcur:
+            # gastos fijos del banco intermediario, en EUR (en TRAIN 8,8-51,3 EUR equivalentes en EUR/USD/CAD/AUD):
+            # el umbral va en EUR y no en unidades de la divisa de la factura (ZAR, BRL… quedarían fuera)
+            if (xb and 0 < fee <= BC_MAX_PCT * o and cur == tcur
+                    and BC_MIN_EUR * 100 <= st.convert(fee, cur, "EUR", date) <= BC_MAX_EUR * 100):
                 hits[5].append((iid, "gastos", c))
         elif abs(c - total) <= 1 and (date - issue).days <= 240:
             hits[1].append((iid, "duplicado", c))
@@ -157,6 +175,35 @@ def _shapes(txn, ctx, ledger, pid) -> tuple[str, str, int] | None:
         if hits[k] and (k not in (3, 5) or len(hits[k]) == 1):
             return hits[k][0]
     return None
+
+
+def _netted(txn, ctx, ledger) -> Proposal | None:
+    """Cobro de una factura neta de su abono (POLICIES §3: los abonos se compensan en el cobro; el ARC cita la factura
+    en related_document): efectivo == saldo ARI − saldo ARC (vivos en el ledger), tercero claro (≥ PARTIAL_MIN) y una sola
+    pareja posible. Sin esto, short_cash tomaba la ARI sola como PARCIAL (fracción redonda) y perdía el abono."""
+    cents = txn["amount_cents"]
+    if cents <= 0:
+        return None
+    ent, cur, date = txn["entity"], txn["currency"], txn["booking_date"]
+    cand = []
+    for c in (cents - 1, cents, cents + 1):
+        for iid, arc, party, issue in ctx.shared[NAME + "_net"].get((ent, cur, c), ()):
+            if issue > date:
+                continue
+            oi, oc = ledger.open.get(iid, 0), ledger.open.get(arc, 0)
+            if oi <= 0 or oc <= 0 or abs(oi - oc - cents) > 1:
+                continue
+            cand.append((iid, arc, party, oi, oc))
+    if not cand:
+        return None
+    tctx = parties.context(txn)
+    scored = {p: parties.score(tctx, p, ctx) for p in {c[2] for c in cand}}
+    good = [c for c in cand if scored[c[2]] >= PARTIAL_MIN]
+    if len(good) != 1 or any(scored[c[2]] >= scored[good[0][2]] - MARGIN for c in cand if c is not good[0]):
+        return None
+    iid, arc, party, oi, oc = good[0]
+    return Proposal(txn["bank_txn_id"], [Alloc(iid, oi), Alloc(arc, oc)], confidence=scored[party] / 100 * 0.9,
+                    reason=f"tercero {party} ({scored[party]:.0f}) + factura menos su abono")
 
 
 DUP_MIN = 70   # parecido de nombre mínimo: el importe exacto de una factura ya cobrada es una señal fuerte
@@ -245,6 +292,9 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
             mine = [c for c in cands if c[1] == best_pid]
             return Proposal(txn["bank_txn_id"], [Alloc(mine[0][0], abs(txn["amount_cents"]))], confidence=best / 100,
                             reason=f"tercero {best_pid} ({best:.0f}) + efectivo con {mine[0][4]}")
+    net = _netted(txn, ctx, ledger)
+    if net:
+        return net
     dup = _duplicate(txn, ctx, ledger)
     if dup:
         return dup
