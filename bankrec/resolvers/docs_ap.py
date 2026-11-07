@@ -110,7 +110,8 @@ def _map_items(rows: pl.DataFrame, ctx) -> pl.DataFrame:
     (maestro o impreso en la factura; los runs de fuera de SEPA no traen IBAN y los nº de factura de proveedor se repiten
     entre proveedores) > importe (total o saldo == importe del documento) > divisa de la fila == divisa de la partida >
     saldo abierto >= importe del documento (un pago parcial, p. ej. al factor, no supera el saldo) > partida abierta >
-    entidad de la cuenta. Empate en lo más alto: no se decide."""
+    entidad de la cuenta. Empate en lo más alto: no se decide; en una 2ª pasada, el proveedor de las demás filas ya
+    decididas de la misma transferencia desempata (por debajo de IBAN y nombre)."""
     sup_m = ctx.master("suppliers")
     sup = sup_m.select(pl.col("iban").alias("beneficiary_iban"), pl.col("supplier_id")).drop_nulls().unique()
     acc = ctx.master("bank_accounts").select(pl.col("account_id").alias("debtor_account_id"), pl.col("entity").alias("acc_entity"))
@@ -142,12 +143,30 @@ def _map_items(rows: pl.DataFrame, ctx) -> pl.DataFrame:
                        (pl.col("entity") == pl.col("acc_entity")).fill_null(False).cast(pl.Int32).alias("s_ent"))
          .with_columns((pl.col("s_iban") * 64 + pl.col("s_name") * 32 + pl.col("s_amt") * 16 + pl.col("s_cur") * 8
                         + pl.col("s_fit") * 4 + pl.col("s_open") * 2 + pl.col("s_ent")).alias("score")))
-    best = c.group_by("rid").agg(pl.col("score").max().alias("best"), pl.len().alias("n"))
-    c = (c.join(best, on="rid").filter(pl.col("score") == pl.col("best")))
-    # empate real entre dos partidas con la misma puntuación: no se decide
-    uniq = c.group_by("rid").agg(pl.len().alias("k"), pl.col("item_id").first(), pl.col("due_date").first(), pl.col("open_cents").first())
-    uniq = uniq.filter(pl.col("k") == 1).select("rid", "item_id", "due_date", "open_cents")
-    return r.join(uniq, on="rid", how="left")
+    def pick(c: pl.DataFrame) -> pl.DataFrame:
+        best = c.group_by("rid").agg(pl.col("score").max().alias("best"))
+        c = c.join(best, on="rid").filter(pl.col("score") == pl.col("best"))
+        # empate real entre dos partidas con la misma puntuación: no se decide
+        u = c.group_by("rid").agg(pl.len().alias("k"), pl.col("item_id").first(), pl.col("party_id").first(),
+                                  pl.col("due_date").first(), pl.col("open_cents").first())
+        return u.filter(pl.col("k") == 1).drop("k")
+
+    uniq = pick(c)
+    # 2ª pasada (§5.3, una transferencia = un beneficiario): fila sin decidir cuyas hermanas de la misma transferencia
+    # (run, e2e, cuenta) ya decididas son todas del mismo proveedor -> desempata a favor de ese proveedor (beneficiario
+    # factor/confirming o nombre distinto, nº de factura repetido entre proveedores, importe parcial)
+    key = ["run_id", "end_to_end_id", "debtor_account_id"]
+    gk = r.select("rid", *key)
+    gp = (gk.join(uniq.select("rid", "party_id"), on="rid").group_by(key)
+          .agg(pl.col("party_id").unique().alias("gp")).filter(pl.col("gp").list.len() == 1)
+          .with_columns(pl.col("gp").list.first()))
+    todo = c.filter(~pl.col("rid").is_in(uniq["rid"].implode()))
+    if todo.height and gp.height:
+        todo = (todo.join(gk, on="rid").join(gp, on=key, how="left")
+                .with_columns(pl.col("score") + (pl.col("party_id") == pl.col("gp")).fill_null(False).cast(pl.Int32) * 20)
+                .drop(*key[1:], "run_id", "gp"))
+        uniq = pl.concat([uniq, pick(todo)])
+    return r.join(uniq.drop("party_id"), on="rid", how="left")
 
 
 def prepare(ctx) -> None:
@@ -274,7 +293,8 @@ def prepare(ctx) -> None:
     #       beneficiarios aún libres cuyo vencimiento (máx. de sus documentos) cae entre el cargo anterior del mismo
     #       run y este (fin de semana o festivo: se carga el siguiente día hábil; sin cargo anterior, _CF_DAYS días).
     #       Si son exactamente N y suman el cargo, son esos (vale con runs de > 28 beneficiarios, donde no se intenta
-    #       el subconjunto; también con todo lo vencido, para el primer cargo del run); si sobran ≤ _CF_EXTRA (pagos con retraso), se quitan
+    #       el subconjunto; también con todo lo vencido, para el primer cargo del run); si sobran ≤ _CF_EXTRA (pagos
+    #       con retraso), se quitan
     #       los que suman el exceso (solución única); si faltan, el resto sale de vencimientos atrasados (subconjunto
     #       exacto). Los beneficiarios con todas sus partidas cerradas al inicio de la fase ya se pagaron: no entran.
     #    b) el resto: N beneficiarios cuyo importe suma el cargo (subconjunto), ampliando la ventana de vencimientos.
