@@ -83,4 +83,4 @@
 | 57 | `nonitem_insurance` | ~32 | 81,2 % | 81,2 % | 81,2 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |
 | 58 | `ar_card_chargeback` | ~31 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 100,0 % | 100,0 % | 100,0 % |  |
 | 59 | `nonitem_interest_expense` | ~28 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |
-| 60 | `ar_1to1_remittance` | ~5 | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |
+| 60 | `ar_1to1_remittance` | ~5 | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |- 2026-11-07 16:28 · P1 · val main 6816e5f (+ e957c38 de P4 + multi_ref_fill solo abonos si las citadas superan el cobro) = **88.95** (P 0.957 R 0.853; txnAcc 0.938; excF1 0.787). Candidato #9: `candidato_live_1628_6816e5f.csv.gz`, SHA-256 contenido `b7c61f565799ef94…`. Ruido val entre ejecuciones del mismo código ≈ ±0,06.
