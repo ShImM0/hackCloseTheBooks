@@ -13,9 +13,10 @@
 | 2026-11-07 12:20 | P1 | ranker LightGBM (último de la cascada, entrena con < ctx.start) | — | 61.23 (P 0.995 R 0.456) | — |
 | 2026-11-07 12:00 | P1 | anuladas fuera (§5.7), sustitutas por alias, N43 cortado, prefijos estrictos, ref de otra factura bloquea amount_match | — | 62.04 (P 0.995 R 0.460) | — |
 | 2026-11-07 12:08 | P1 | main c4f389b completo (incluye exceptions_amounts de P3); fichero `out/live/envio_live_1201_c4f389b.csv.gz` | — | 63.39 (P 0.995 R 0.464) | pendiente |
-| 2026-11-07 12:40 | P4 | medición tras merge fd7f56d (docs_ap + amount_match FX) | 55.26 | 59.68 (P 0.9956 R 0.4472; excF1 0.283) | — |
-| 2026-11-07 13:10 | P4 | nonitem: patrones auditados 2023/24 (cash pool por maestro, préstamos, divisa, impuestos, seguros, TGSS); cascada estándar, base fd7f56d (anterior a 63.39 de P1) | 55.36 | 59.90 (P 0.9956 R 0.4472; txnAcc 0.7789; excF1 0.283) | — |
-| 2026-11-07 13:10 | P4 | + `nonitem_unmatched` al final de la cascada, base fd7f56d (`scripts/p4_run.py`; falta registrarlo, P1) | — | 60.36 (txnAcc 0.7764; excF1 0.311; UNIDENTIFIED F1 0.19→0.47) | no enviado; LIVE válido, 392.949 filas, 2 min 28 s |
+| 2026-11-07 11:46 | P4 | medición tras merge fd7f56d (docs_ap + amount_match FX) | 55.26 | 59.68 (P 0.9956 R 0.4472; excF1 0.283) | — |
+| 2026-11-07 12:08 | P4 | nonitem: patrones auditados 2023/24 (cash pool por maestro, préstamos, divisa, impuestos, seguros, TGSS); cascada estándar, base fd7f56d (anterior a 63.39 de P1) | 55.36 | 59.90 (P 0.9956 R 0.4472; txnAcc 0.7789; excF1 0.283) | — |
+| 2026-11-07 12:00 | P4 | + `nonitem_unmatched` al final de la cascada, base fd7f56d (`scripts/p4_run.py`; falta registrarlo, P1) | — | 60.36 (txnAcc 0.7764; excF1 0.311; UNIDENTIFIED F1 0.19→0.47) | no enviado; LIVE válido, 392.949 filas, 2 min 28 s |
+| 2026-11-07 12:28 | P4 | fichero LIVE `out/live/envio_live_1228_e7c2b23_p4.csv.gz` (main e7c2b23 + `nonitem_unmatched`, `scripts/p4_run.py --phase live`); VALIDO con comprobación de item_id; 203.083 movimientos, 411.137 filas, 4,2 MB; 5 min 05 s; SHA-256 `7e002779b1c7e7bef9fec615e111da57fc04ee1488034d4dc583c6c8685f5e2e` | — | pendiente (medición en curso) | pendiente (envío manual) |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe
