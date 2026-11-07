@@ -47,9 +47,9 @@ def _map_items(rec: pl.DataFrame, ctx) -> pl.DataFrame:
     """Añade item_id a cada recibo (vectorizado). Recibos sin partida se quedan con item_id nulo."""
     cust = ctx.master("customers")
     by_mandate = (cust.filter(pl.col("sepa_mandate_id").is_not_null())
-                  .select(pl.col("sepa_mandate_id").alias("mandate_id"), pl.col("customer_id").alias("pm")).unique("mandate_id"))
+                  .select(pl.col("sepa_mandate_id").alias("mandate_id"), pl.col("customer_id").alias("pm")).unique("mandate_id", keep="first", maintain_order=True))
     by_iban = (cust.filter(pl.col("iban").is_not_null())
-               .select(pl.col("iban").alias("debtor_iban"), pl.col("customer_id").alias("pi")).unique("debtor_iban"))
+               .select(pl.col("iban").alias("debtor_iban"), pl.col("customer_id").alias("pi")).unique("debtor_iban", keep="first", maintain_order=True))
     acc = ctx.master("bank_accounts").select("account_id", pl.col("entity").alias("acc_entity"))
     rec = (rec.with_row_index("rid")
            .join(by_mandate, on="mandate_id", how="left")
@@ -77,7 +77,7 @@ def _map_items(rec: pl.DataFrame, ctx) -> pl.DataFrame:
              (pl.col("entity") == pl.col("acc_entity")).fill_null(False).cast(pl.Int32).alias("s_ent"))
          .with_columns((pl.col("s_doc") * 4 + pl.col("s_amt") * 2 + pl.col("s_ent")).alias("score"))
          .filter(pl.col("score") >= 2)
-         .sort(["rid", "score", "issue_date"], descending=[False, True, False])
+         .sort(["rid", "score", "issue_date", "item_id"], descending=[False, True, False, False], maintain_order=True)   # desempate estable
          .unique("rid", keep="first")
          .select("rid", "item_id", "score"))
     # sin tercero: número impreso dentro de la entidad de la cuenta, con importe igual
@@ -87,7 +87,7 @@ def _map_items(rec: pl.DataFrame, ctx) -> pl.DataFrame:
               .join(ari.rename({"entity": "acc_entity"}), left_on=["acc_entity", "amount_cents"],
                     right_on=["acc_entity", "total_cents"])
               .filter(pl.col("idig").str.ends_with(pl.col("rdig")))
-              .sort(["rid", "issue_date"]).unique("rid", keep="first")
+              .sort(["rid", "issue_date", "item_id"], maintain_order=True).unique("rid", keep="first")
               .select("rid", "item_id", pl.lit(1, pl.Int32).alias("score")))
         c = pl.concat([c, c2])
     return rec.join(c, on="rid", how="left").drop("pm", "pi", "rraw")
@@ -110,7 +110,7 @@ def prepare(ctx) -> None:
          .with_columns((pl.col("booking_date") - pl.col("collection_date")).dt.total_days().alias("lag"))
          .filter(pl.col("lag").is_between(-1, 4))
          .with_columns(pl.col("lag").abs().alias("alag"))
-         .sort(["alag", "batch_id"]))
+         .sort(["alag", "batch_id", "bank_txn_id"], maintain_order=True))
     used_t, used_b, pairs = set(), set(), {}
     for b, t in zip(j["batch_id"].to_list(), j["bank_txn_id"].to_list()):
         if b in used_b or t in used_t:
