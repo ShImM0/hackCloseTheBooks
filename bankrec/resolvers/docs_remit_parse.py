@@ -169,7 +169,8 @@ def parse_xlsx(path: Path) -> dict | None:
 
 def _amounts(nums: list[str]) -> tuple[int, int, int] | None:
     """(bruto, deducción, pagado) con columnas en cualquier orden: la deducción es la cifra negativa de una factura.
-    Una nota de crédito (bruto < 0) repite su importe como pagado."""
+    Una nota de crédito (bruto < 0) repite su importe como pagado. Con dos cifras positivas y la segunda menor
+    (columna de deducción en blanco: 'NF0125007817 18/04/2025 41,703.70 37,533.33') la deducción es la diferencia."""
     v = [to_cents(n) for n in nums]
     if any(x is None for x in v) or not v:
         return None
@@ -179,7 +180,9 @@ def _amounts(nums: list[str]) -> tuple[int, int, int] | None:
     if g < 0:
         return g, 0, v[-1]
     if len(v) == 2:
-        return (g, v[1], g + v[1]) if v[1] < 0 else (g, 0, v[1])
+        if v[1] < 0:
+            return g, v[1], g + v[1]
+        return (g, v[1] - g, v[1]) if 0 < v[1] < g else (g, 0, v[1])
     if len(v) == 3:
         negs = [x for x in v[1:] if x < 0]
         if negs:
@@ -205,6 +208,8 @@ def _rows_from_lines(lines: list[str], month_first: bool) -> list:
         if abs(g + d - p) > 1:           # columnas incoherentes: la fila no es de importes
             continue
         reason = _reason(rest) if p != g else ""   # solo las filas con deducción llevan motivo
+        if len(nums) == 2 and 0 < p < g:
+            d = 0                        # deducción no impresa (columna en blanco): pagado < bruto sin motivo
         x = _row(m.group(1), to_date(m.group(2), month_first), g / 100, d / 100, reason, p / 100)
         if x:
             out.append(x)
