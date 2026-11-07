@@ -125,7 +125,7 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
         if prop.allocs and not allocs:
             prop = fallback(txn, ctx)
         prop.allocs = allocs
-        ledger.apply(prop)
+        ledger.apply(prop, txn["booking_date"])
         if allocs:
             rows.extend([tid, a.item_id, fmt_cents(a.amount_cents), "", a.exception] for a in allocs)
         else:

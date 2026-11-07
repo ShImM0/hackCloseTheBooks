@@ -18,6 +18,8 @@
 | 2026-11-07 13:10 | P4 | + `nonitem_unmatched` al final de la cascada, base fd7f56d (`scripts/p4_run.py`; falta registrarlo, P1) | — | 60.36 (txnAcc 0.7764; excF1 0.311; UNIDENTIFIED F1 0.19→0.47) | no enviado; LIVE válido, 392.949 filas, 2 min 28 s |
 | 2026-11-07 12:35 | P1 | fallback: UNIDENTIFIED sin excepción si cliente reconocido o lote; guarda OVERPAYMENT (efectivo > 1,35×saldo) | — | 63.76 (excF1 0.398; UNIDENTIFIED F1 0.28→0.44, OVERPAYMENT P 0.03→0.11) | — |
 | 2026-11-07 12:50 | P1 | registry: + nonitem_unmatched (P4) al final, sobre main d145a0d | — | 65.87 (P 0.995 R 0.493; excF1 0.410; UNIDENTIFIED F1 0.55) | — |
+| 2026-11-07 12:24 | P1 | envío LIVE `envio_live_1224_2b8c623.csv.gz` (val 65.87) | — | 65.87 | **65.09** |
+| 2026-11-07 12:45 | P1 | amount_match.duplicate: DUPLICATE_PAYMENT (mismo tercero, mismo importe, partida cerrada ≤ 60 días) | — | 67.70 (excF1 0.495) | — |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe

@@ -106,7 +106,43 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
         p = text_ref.by_ref(txn, ctx, ledger)
     if p is None:
         p = by_ratio(txn, ctx, ledger)
+    if p is None:
+        p = duplicate(txn, ctx, ledger)
     return p
+
+
+DUP_DAYS = 60      # en TRAIN 2024 el p99 entre el pago y su duplicado es 49 días
+
+
+def duplicate(txn: dict, ctx, ledger) -> Proposal | None:
+    """§3 DUPLICATE_PAYMENT: nada abierto encaja, pero el mismo tercero pagó hace ≤ DUP_DAYS una partida por
+    exactamente este importe (el banco repite el pago). Amount = lo pagado otra vez (= saldo que se cerró)."""
+    cents = txn["amount_cents"]
+    if not cents:
+        return None
+    typ = "ARI" if cents > 0 else "API"
+    ents = (txn["entity"],) if cents > 0 else PAYMENT_FACTORY.get(txn["entity"], (txn["entity"],))
+    cur, amt = txn["currency"], abs(cents)
+    if txn.get("orig_currency") and txn["orig_currency"] != cur and txn.get("orig_amount_cents"):
+        cur, amt = txn["orig_currency"], abs(txn["orig_amount_cents"])
+    cands = [(i, d) for e in ents for i, d in ledger.closed_with(e, cur, amt)
+             if ledger.info[i][0] == typ and 0 <= (txn["booking_date"] - d).days <= DUP_DAYS]
+    if not cands:
+        return None
+    from bankrec import refs
+    tctx = parties.context(txn)
+    toks = refs.tokens(refs.joined(refs.haystack(txn)))
+    good = []
+    for i, d in cands:
+        r = refs.ref_score(ledger.info[i][5], toks) if toks else 0
+        s = parties.score(tctx, ledger.info[i][3], ctx)
+        if r >= 85 or s >= NAME_MIN:
+            good.append((r, s, i))
+    if len({g[2] for g in good}) != 1:
+        return None
+    r, s, i = good[0]
+    return Proposal(txn["bank_txn_id"], [Alloc(i, amt, "DUPLICATE_PAYMENT")], confidence=0.8,
+                    reason=f"pago repetido de {ledger.info[i][5]} (ref {r}, tercero {s:.0f})")
 
 
 def _exact(txn: dict, ctx, ledger) -> Proposal | None:
