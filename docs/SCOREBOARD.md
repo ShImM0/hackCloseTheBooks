@@ -95,3 +95,5 @@
 | ---------------- | -- | -------- | ------------------------------------------------ | ------------: | ---------------------------------------- |
 | 2026-11-07 13:47 | P4 | `8141660` | P4 (`1eed3ec`): UNIDENTIFIED solo sin tercero identificable + SUPPLIER_REFUND/CUSTOMER_REFUND + informe de fallos y avisos de registro | 70.41 → **70.68** (+0.27) | UNIDENTIFIED F1 0.722 → 0.860 (P 0.62 → 0.91, R 0.86 → 0.82); excF1 +0.012; SUPPLIER_REFUND recall 38 → 87 %; CUSTOMER_REFUND 344/344; comprobado en 2024 (`reports/P4_HISTORY.md`) |
 | 2026-11-07 14:01 | P4 | `1eed3ec` | main completo (incluye `docs_card` cheques/lockbox de P2) | — → **71.38** | UNIDENTIFIED F1 0.859; txnAcc 0.881; precisión de asignación 0.903 (`subset_sum` 61 % de acierto: ver `reports/P4_QA.md`) |
+
+- 2026-11-07 15:00 · P1 · val main c21c984 (docs_remit de P2 nuevo) = **85.73** (P 0.954 R 0.791; excF1 0.733). docs_remit 160.305 pares, 100 % correctos.
