@@ -127,8 +127,16 @@ def _exact(txn: dict, ctx, ledger) -> Proposal | None:
     pick, why = mine[0], "único" if len(mine) == 1 else "FIFO"
     if len(mine) > 1:
         from bankrec import refs
-        m = pick_month(mine, ledger, refs.months(refs.haystack(txn)))
+        m = pick_month(mine, ledger, refs.months(refs.joined(refs.haystack(txn))))
         if m:
             pick, why = m, "mes de servicio"
+    # el texto cita (≥ 90) otra factura abierta del mismo tercero: no es esta (la resolverá by_ref)
+    from bankrec import refs
+    toks = [t for t in refs.tokens(refs.joined(refs.haystack(txn))) if len(t) >= 6]
+    if toks and refs.ref_score(ledger.info[pick][5], toks) < 90:
+        S = ctx.shared.get(NAME, {})
+        for o in S.get("by_party", {}).get(best_pid, ()):
+            if o != pick and ledger.open.get(o, 0) > 0 and refs.ref_score(ledger.info[o][5], toks) >= 90:
+                return None
     return Proposal(txn["bank_txn_id"], [Alloc(pick, ledger.open[pick])], confidence=best / 100,
                     reason=f"tercero {best_pid} ({best:.0f}) + importe, {why}")

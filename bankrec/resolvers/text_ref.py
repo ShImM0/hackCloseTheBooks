@@ -39,20 +39,38 @@ def prepare(ctx) -> None:
             idx[(ent, "p" + d[:KEY_LEN])].append(iid)
         elif len(d) >= 4:   # números cortos (formatos de proveedor, filiales nuevas): clave = número completo
             idx[(ent, "s" + d)].append(iid)
+    # §5.7 "anula y sustituye a X": la sustituta se busca también por el número de X (alias)
+    alias: dict[str, str] = {}
+    facts = ctx.shared.get("pdf_facts")
+    if facts is not None and facts.height:
+        import polars as pl
+        rep = facts.filter(pl.col("fact") == "replaces").select("entity", "document_number", "value")
+        doc2id = {(e, d): i for i, e, d in it.filter(pl.col("item_type") == "ARI")
+                  .select("item_id", "entity", "document_number").iter_rows()}
+        for ent, new, old in rep.iter_rows():
+            iid = doc2id.get((ent, new))
+            d = refs.digits(old)
+            if iid and len(d) >= KEY_LEN:
+                alias[iid] = old
+                idx[(ent, "s" + d[-KEY_LEN:])].append(iid)
+                idx[(ent, "p" + d[:KEY_LEN])].append(iid)
     ctx.shared[NAME] = idx
+    ctx.shared[NAME + "_alias"] = alias
 
 
 def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     cands = candidates(txn, ledger)
     if not cands:
         return None
-    toks = refs.tokens(refs.haystack(txn))
+    toks = refs.tokens(refs.joined(refs.haystack(txn)))
     if not toks:
         return None
+    alias = ctx.shared.get(NAME + "_alias", {})
     scored = []
     for c in cands:
         i = ledger.info[c]
-        s = max(refs.ref_score(i[5], toks), refs.ref_score(i[6], toks) if i[6] else 0)
+        s = max(refs.ref_score(i[5], toks), refs.ref_score(i[6], toks) if i[6] else 0,
+                refs.ref_score(alias.get(c), toks) if c in alias else 0)
         if s >= REF_MIN:
             scored.append((s, c))
     if not scored:
@@ -70,12 +88,13 @@ def by_ref(txn: dict, ctx, ledger) -> Proposal | None:
     cents = txn["amount_cents"]
     if not cents or NAME not in ctx.shared:   # text_ref desactivado
         return None
-    toks = [t for t in refs.tokens(refs.haystack(txn)) if len(t) >= 5]
+    toks = [t for t in refs.tokens(refs.joined(refs.haystack(txn))) if len(t) >= 5]
     if not toks:
         return None
     typ = "ARI" if cents > 0 else "API"
     ents = (txn["entity"],) if cents > 0 else PAYMENT_FACTORY.get(txn["entity"], (txn["entity"],))
     idx = ctx.shared[NAME]
+    alias = ctx.shared.get(NAME + "_alias", {})
     pool = set()
     for e in ents:
         for t in toks:
@@ -95,7 +114,7 @@ def by_ref(txn: dict, ctx, ledger) -> Proposal | None:
             continue
         if i[2] == txn["currency"] and not (MIN_RATIO * oc <= abs(cents) <= MAX_RATIO * oc):
             continue
-        s = refs.ref_score(i[5], toks)
+        s = max(refs.ref_score(i[5], toks), refs.ref_score(alias.get(c), toks) if c in alias else 0)
         if s < REF_MIN:
             continue
         if i[3] not in pscore:
