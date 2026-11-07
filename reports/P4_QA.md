@@ -30,7 +30,7 @@ holdout que se declare intacto. Congelar reglas antes de abrir las etiquetas del
 precisión de categorías y falsas categorías sobre movimientos con partidas, por banco, formato y mes;
 no seleccionar cambios solo por la nota agregada. Mantener FINAL sin consultar para decisiones de ajuste.
 
-## Verificación local
+## Verificación inicial (antes de integrar P1–P3)
 
 - Baseline ejecutado en este checkout: sample **2.80**.
 - Reglas finales conservadoras: sample **3.25**, txn accuracy **0.1037**, sin asignaciones de partidas.
@@ -62,7 +62,6 @@ un registro PREPARADO, NO ENVIADO al scoreboard. Solo imprime instrucciones de e
 inválido no crea copia ni registro. FINAL sigue teniendo un único envío puntuado; el script no puede
 saber si el equipo ya lo ha consumido: verificar en la plataforma antes del envío manual.
 
-Las carpetas `../train/` y `../live/` están vacías. No existe `out/live/starter.csv.gz` en este checkout,
-aunque la entrada histórica de P1 lo menciona. Por tanto están pendientes la evaluación val, el baseline
-LIVE, tiempos en LIVE, prueba de maestros FINAL y las notas reales de plataforma. Configurar
-`BANKREC_DATA` con la raíz que contenga los datos cuando estén disponibles.
+TRAIN y LIVE ya están disponibles y `bankrec.local.toml` apunta a su raíz. Se ha ejecutado val completo y se han preparado copias LIVE, sin enviar a plataforma. La nota de val actual es 38,29. Los resultados históricos y las limitaciones se recogen en `reports/P4_HISTORY.md`.
+
+La CLI del validador y `submit.py` ya buscan ids desconocidos automáticamente en partidas actuales y anteriores, incluidos abonos y abiertas al inicio; esta búsqueda no consulta golden. Hay diez pruebas de P4, incluida la selección de categorías de maestros FINAL mediante una fixture sintética. La comprobación con datos FINAL reales y las notas de plataforma siguen pendientes. También falta contrastar los ejemplos web, todavía inaccesibles.

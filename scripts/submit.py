@@ -21,7 +21,7 @@ from bankrec.validate import phase_txn_ids, scorer, submission_rows, validate
 def prepare_submission(path: Path, phase: str) -> dict:
     """Prepara un artefacto local verificable; los errores no generan archivos."""
     ids = phase_txn_ids(phase)
-    errors, warnings = validate(path, phase, ids)
+    errors, warnings = validate(path, phase, ids, check_known_items=True)
     if errors:
         return {"errors": errors, "warnings": warnings}
     raw = path.read_bytes()
