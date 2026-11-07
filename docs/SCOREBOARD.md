@@ -96,3 +96,4 @@
 
 - 2026-11-07 15:00 · P1 · val main c21c984 (docs_remit de P2 nuevo) = **85.73** (P 0.954 R 0.791; excF1 0.733). docs_remit 160.305 pares, 100 % correctos.
 - 2026-11-07 15:10 · P1 · val main 9f7b6c5 (+ 1d8f290 de P4) = 85.63 (−0.10 frente a c21c984; P 0.954→0.951). Envío LIVE desde c21c984.
+- 2026-11-07 15:30 · P1 · val main d1d399d (+ 001d6c2 docs_ap FX de P2 + 1d8f290 de P4) = **87.96** (P 0.955 R 0.853; txnAcc 0.934; excF1 0.746). ap_fx: faltan 12 filas FX (antes 44 k pares). DUPLICATE_PAYMENT P 0.28: docs_remit 1.117 y docs_ap 297 filas falsas.
