@@ -12,7 +12,8 @@ importe y pone excepción e importe de salida. Va DESPUÉS de amount_match (el s
 Segunda etapa (tercero primero): si el tercero se identifica (nombre/IBAN, único) se buscan en SUS facturas las formas
 de cobro que ningún otro resolver ve, por este orden: saldo exacto (también en divisa distinta vía orig_amount), duplicado
 (factura ya cobrada por el total), plazo/retención/anticipo del PDF, parcial (fracción redonda del saldo), gastos
-bancarios (10-71 unidades y ≤ 2 %) y sobrepago (única factura abierta, hasta +10 %, como el de P1).
+bancarios (10-71 unidades y ≤ 2 %), sobrepago exacto (+1..100 unidades enteras, +1 % o +10 %; factura única) y
+sobrepago (única factura abierta del tercero, misma forma de exceso).
 
 Colocación en registry.CASCADE: justo después de "bankrec.resolvers.amount_match".
 """
@@ -22,7 +23,8 @@ from collections import defaultdict
 
 from bankrec import parties
 from bankrec.contract import Alloc, Proposal
-from bankrec.exceptions import cross_border, PARTIAL_FRACS, DISPUTE_FRACS, WH_BPS, _plan, _state
+from bankrec.exceptions import (cross_border, overpay_shape, PARTIAL_FRACS, DISPUTE_FRACS, WH_BPS, _plan,
+                                _state)
 from bankrec.resolvers.amount_match import MARGIN, NAME_MIN
 
 NAME = "short_cash"
@@ -90,7 +92,8 @@ def candidates(txn: dict, ctx, ledger) -> list[tuple]:
 
 
 PARTIAL_SET = sorted(set(PARTIAL_FRACS + DISPUTE_FRACS + [0.95, 0.98, 0.99]))
-SHAPE_RANK = {"exacto": 0, "duplicado": 1, "plan PDF": 2, "parcial": 3, "gastos": 4, "sobrepago": 5}
+SHAPE_RANK = {"exacto": 0, "duplicado": 1, "plan PDF": 2, "sobrepago exacto": 3, "parcial": 4, "gastos": 5,
+              "sobrepago": 6}
 PAYMENT_FACTORY = {"ES00": ("ES00", "ES01", "ES02", "PT01")}
 
 
@@ -128,7 +131,7 @@ def _shapes(txn, ctx, ledger, pid) -> tuple[str, str, int] | None:
         else:
             continue
         live.append((iid, issue, cur, total, ledger.open.get(iid, 0), c))
-    hits = {k: [] for k in range(6)}
+    hits = {k: [] for k in range(7)}
     xb = cross_border(txn)
     openl = [x for x in live if x[4] > 0]
     for iid, issue, cur, total, o, c in live:
@@ -138,23 +141,28 @@ def _shapes(txn, ctx, ledger, pid) -> tuple[str, str, int] | None:
             f = st.item_facts(iid)
             if f and c < o - 1 and any(abs(a - c) <= 1 for a, _, _ in _plan(f)):
                 hits[2].append((iid, "plan PDF", c))
+            if credit and overpay_shape(c, o):
+                hits[3].append((iid, "sobrepago exacto", c))
             if c < o - 1 and any(abs(c - round(o * fr)) <= 1 for fr in PARTIAL_SET):
-                hits[3].append((iid, "parcial", c))
+                hits[4].append((iid, "parcial", c))
             fee = o - c
             if xb and 900 <= fee <= min(0.02 * o, 8000) and cur == tcur:
-                hits[4].append((iid, "gastos", c))
+                hits[5].append((iid, "gastos", c))
         elif abs(c - total) <= 1 and (date - issue).days <= 240:
             hits[1].append((iid, "duplicado", c))
-    if len(openl) == 1 and openl[0][4] < openl[0][5] <= 1.10 * openl[0][4]:
-        hits[5].append((openl[0][0], "sobrepago", openl[0][5]))
-    for k in range(6):
-        if hits[k] and (k != 4 or len(hits[k]) == 1):
+    if len(openl) == 1 and overpay_shape(openl[0][5], openl[0][4]):   # única abierta y exceso con forma
+        hits[6].append((openl[0][0], "sobrepago", openl[0][5]))
+    for k in range(7):
+        # formas por importe que pueden coincidir por azar (sobrepago exacto, gastos): solo si la factura es única
+        if hits[k] and (k not in (3, 5) or len(hits[k]) == 1):
             return hits[k][0]
     return None
 
 
 DUP_MIN = 70   # parecido de nombre mínimo: el importe exacto de una factura ya cobrada es una señal fuerte
-PARTIAL_MIN = 85   # un parcial por fracción redonda coincide por azar con más facturas: exige tercero claro
+PARTIAL_MIN = 95   # un parcial por fracción redonda coincide por azar con más facturas: exige tercero claro
+DUP_PAY_MIN = 95   # duplicado por importe (sin referencia): en val con parecido 70-94 solo 5 de 78 eran duplicados
+# (los demás, lookalikes UNIDENTIFIED o cobros de otra factura); el parcial con 85-94 acertaba 1 de 139
 
 
 def _duplicate(txn, ctx, ledger) -> Proposal | None:
@@ -173,7 +181,7 @@ def _duplicate(txn, ctx, ledger) -> Proposal | None:
                 continue
             tctx = tctx or parties.context(txn)
             sc = parties.score(tctx, party, ctx)
-            if sc >= DUP_MIN and (best is None or sc > best[0]):
+            if sc >= DUP_PAY_MIN and (best is None or sc > best[0]):
                 best = (sc, iid, party)
     if not best:
         return None

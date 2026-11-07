@@ -25,7 +25,7 @@ Algoritmo (en la divisa de la partida, céntimos enteros):
  4. efectivo < esperado: parcial explicado por el PDF (retención, anticipo, plazos) > pronto pago (subconjunto
     de facturas con plazo vigente + 3 días de gracia) > retención en origen (MX 1,25 %/10 %, BR/MA 1,5 %/10 %)
     > gastos bancarios (≤ 60 EUR y ≤ 2 %) > PARTIAL (importe = lo aplicado);
- 5. efectivo > esperado en una sola factura -> OVERPAYMENT;
+ 5. efectivo > esperado en una sola factura, con exceso de forma reconocible (overpay_shape) -> OVERPAYMENT;
  6. divisa del movimiento != divisa de la partida -> FX_DIFFERENCE en lugar de vacío/SHORT_*.
 Módulos de apoyo propios: bankrec/exceptions_oracle.py (mide solo esta etapa con el golden como resolver).
 """
@@ -51,6 +51,23 @@ INVOICES = ("ARI", "API")
 # run. En val, las 1.140 filas DUPLICATE_PAYMENT de estos resolvers eran todas falsas (otro movimiento había consumido
 # antes la partida por error): con saldo 0, la fila va sin excepción por el importe del documento.
 DOC_RESOLVERS = {"docs_remit", "docs_dd", "docs_card", "docs_ap"}
+
+
+OVERPAY_UNITS = 100   # exceso en unidades enteras: en TRAIN 2021-2025 los OVERPAYMENT llevan +1..+100 unidades exactas
+
+
+def overpay_shape(c: int, o: int) -> bool:
+    """¿El efectivo c es el saldo o más un sobrepago de forma reconocible? (POLICIES §3 OVERPAYMENT). En TRAIN
+    2021-2025 el 100 % de los OVERPAYMENT (2.838 filas, todos los años) tienen una de tres formas: exceso de unidades
+    enteras (≤ 100), o efectivo = saldo × 1,01 o × 1,10 redondeado al céntimo. Un exceso sin esa forma suele ser
+    un cobro de varias facturas del que solo se ha encontrado una (en val: 0 de 218 OVERPAYMENT verdaderos lo tienen,
+    138 de 138 falsos sí)."""
+    ex = c - o
+    if ex <= 0:
+        return False
+    if ex % 100 == 0 and ex <= OVERPAY_UNITS * 100:
+        return True
+    return any(abs(c - round(o * f)) <= 1 for f in (1.01, 1.10))
 
 
 def cross_border(txn: dict) -> bool:
@@ -401,7 +418,7 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0, doc=False)
                 out[i] = Alloc(rows[i][0].item_id, opens[i], "PARTIAL")
         return out
     if delta < 0:
-        if len(live) == 1 and not live_cn and not fx:
+        if len(live) == 1 and not live_cn and not fx and overpay_shape(cash, opens[live[0]]):
             out[live[0]] = Alloc(rows[live[0]][0].item_id, opens[live[0]], "OVERPAYMENT")
         return out
 
