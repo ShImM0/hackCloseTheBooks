@@ -167,3 +167,21 @@
 | 58 | `nonitem_interest_expense` | ~31 | 100,0 % | 100,0 % |  |
 | 59 | `nonitem_insurance` | ~28 | 100,0 % | 100,0 % |  |
 | 60 | `ar_1to1_remittance` | ~2 | 100,0 % | 100,0 % |  |
+
+---
+
+## 4. Notas de P2
+
+- 2026-11-07 17:57 · val limpio (run en exclusiva, 6 meses) de los commits de P2 `1923692…c9cb6c3` sobre `80e6ef8` = **94.08**
+  (P 0.997 R 0.890; txnAcc 0.955; excF1 0.920) frente a 92.31 de `80e6ef8`. val limpio de main `69d902a` = **94.14**.
+  Las caídas de segmentos vistas por P1 no se reproducen: en ambos runs ap_confirming 0.971, ap_factored 0.992, ap_fx 0.995,
+  ar_1toN_text 0.921, ar_n_to_m 0.456 → 0.460.
+- 2026-11-07 19:05 · tareas de PLAN_MEJORAS §3 P2 (base `de89d25`, backtests de 1 mes por tiempo: 2025-01 = **95.18**
+  P 0.9986 R 0.9077; 2024-01 = **94.95** P 0.9983 R 0.8984):
+  - Tarea 1 (FX en `subset_sum` y `multi_ref`): rama `p2-fx-wip` (`d9f8178`, `dc94fb1`), smoke 89.16 → 89.18. **Sin medir con
+    backtest todavía**: no subir a main hasta tener 2025-H1 y 2024-H1.
+  - Tarea 3 (etapa final de `subset_sum` hasta 36 partidas): rama `p2-stage36-wip` (`c5a3e99`), **no subir**: 2025-01 95.18 → 95.18
+    (1 txn, 2 pares bien), 2024-01 no dispara. Con solución única y LAM bajo casi nunca pasa; ganar volumen exige relajar LAM.
+  - Tarea 5 (revisión de `docs_remit._map_rows`, números cortos): regla correcta (LIVE: 407 filas, 1 candidata cada una).
+    Sugerencias: exigir además el tercero del aviso ("57" también casa `…1057`) y filtrar por importe en el propio join.
+  - Tarea 2 (`multi_ref_fill` con varios terceros, fichero de P1) y tarea 4 (deducciones, con P3): sin empezar.
