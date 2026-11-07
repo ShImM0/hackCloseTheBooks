@@ -211,7 +211,7 @@ def prepare(ctx) -> None:
           .join(debits.filter(pl.col("end_to_end_id").is_not_null()), left_on=["debtor_account_id", "end_to_end_id"],
                 right_on=["account_id", "end_to_end_id"])
           .with_columns((pl.col("booking_date") - pl.col("execution_date")).dt.total_days().alias("lag"))
-          .filter(pl.col("lag").is_between(0, _SLACK)).sort("lag"))
+          .filter(pl.col("lag").is_between(0, _SLACK)).sort(["lag", "bank_txn_id", "rk", "end_to_end_id"], maintain_order=True))   # desempate estable
     used_tr: set[tuple] = set()
     for t, rk, e2e, docs in zip(j1["bank_txn_id"].to_list(), j1["rk"].to_list(), j1["end_to_end_id"].to_list(), j1["docs"].to_list()):
         if t not in used:
@@ -226,7 +226,7 @@ def prepare(ctx) -> None:
         trs.join(rest.drop("oamt", "ocur"), left_on=["debtor_account_id", "transfer_amount_cents"], right_on=["account_id", "amt"]),
         trs.join(rest.filter(pl.col("oamt").is_not_null() & (pl.col("ocur") != pl.col("currency"))).drop("amt"),
                  left_on=["debtor_account_id", "transfer_amount_cents", "rcur"], right_on=["account_id", "oamt", "ocur"]),
-    ], how="diagonal").unique(["bank_txn_id", "rk", "end_to_end_id"])
+    ], how="diagonal").unique(["bank_txn_id", "rk", "end_to_end_id"], maintain_order=True)
     cand = (cand.with_columns((pl.col("booking_date") - pl.col("execution_date")).dt.total_days().alias("lag"))
             .filter(pl.col("lag").is_between(0, _SLACK)))
     if cand.height:
@@ -472,7 +472,7 @@ def _subset(pool: list, n: int, amt: int, booking: dt.date) -> list | None:
 
 def _run_proposal(t: str, rows: list) -> Proposal | None:
     allocs, seen, miss = [], set(), 0
-    for item, cents in rows:
+    for item, cents in sorted(rows, key=lambda r: (r[0] is None, r[0] or "", r[1])):   # orden de filas estable
         if item is None or item in seen:
             miss += 1
             continue
