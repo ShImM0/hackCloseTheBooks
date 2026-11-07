@@ -128,7 +128,7 @@ Lo ejecuta P1. P4 hace a la vez lo mismo en su portátil como respaldo: mismo co
    Maestros de FINAL: deben incluir ZA01 y tipos de cambio de 2026.
    `uv run python -c "from bankrec import load; c=load.master('customers','final'); f=load.master('fx_rates','final'); print((c['entity']=='ZA01').sum(), f['date'].max())"`
    Debe dar más de 0 clientes de ZA01 y una fecha de 2026-06. Si no, revisar la ruta `final/masters_final/`.
-   Borrar cachés de ensayos: `_cache/ranker_final_*`, `_cache/pdf_text_final.parquet` y `_cache/remit_v2_final_*`, si existen.
+   Borrar cachés de ensayos: `_cache/ranker_final_*`, `_cache/pdf_text_final.parquet` y `_cache/remit_v*_final_*`, si existen.
 4. **Precalentar los PDFs** (multiproceso): `uv run python -m bankrec.pdf_text final`
    Si el portátil va justo de memoria, cerrar otros procesos antes: lanza un proceso por núcleo.
 5. **Ejecutar**: `uv run python scripts/run_phase.py --phase final` → `out/final/submission.csv.gz` + `VALIDO`.
@@ -201,61 +201,63 @@ Val (TRAIN 2025-01..06) es una aproximación optimista, no el objetivo.
 - Sesgo conocido de val (optimista): el conjunto de partidas abiertas excluye las cerradas fuera de banco en
   2025-H1, y los maestros son una foto de 2025-12-31 (nombres e IBAN "del futuro" respecto a val).
 
-## Estado y siguientes pasos por rol (15:30, tras el envío #7)
+## Estado y siguientes pasos por rol (noche del 7-nov, tras FINAL)
 
 **Dónde estamos**
-- **LIVE #7** (`c21c984`): **84,12**, la mejor nota hasta ahora.
-  - Allocation F1 85,5 % (P 94,8 / R 77,8), txn accuracy 92,2 %, exception macro-F1 68,7 %.
-  - Val de ese mismo código: 85,73. LIVE queda entre 1 y 1,6 puntos por debajo de val, de forma estable.
-- **main `db706c6`**: val **87,96** (P 0,955 · R 0,853 · txnAcc 0,934 · excF1 0,746).
-  - Añade sobre #7 el `docs_ap` FX de P2 y `1d8f290` de P4.
-  - Candidato a envío #8: `out/live/candidato_live_1524_db706c6.csv.gz`.
+- FINAL = etiqueta `final` (`3956fad`): val 94,07 · LIVE 93,83 (puesto 8). El primero del ranking: 96,38.
+- `7a8701e` (incluye `5e5a0d1`: subset_sum/multi_ref_fill/ranker se abstienen ante ambigüedad): val 94,01
+  (P 0,998 · R 0,887): −0,06 frente a `final`.
+- P1 (en local, se sube tras medir 2024-H1): `multi_ref_cited` + `parties` nombres cortos + `_overpay_guard` +
+  `/CHGS/` + `docs_remit` números cortos → val **94,47** (+0,46 sobre `7a8701e`). Falta medir el post-pass.
+- **Plan completo, cifras y evidencia de cada tarea: `docs/PLAN_MEJORAS.md`.** Léelo antes de empezar.
 
-**Dónde quedan los puntos** (val de `db706c6`; cada clase de excepción vale 2 puntos)
+**Qué sabemos (vale para todos)**
+- Falta recall, no precisión. 80 % de los pares que faltan (64,7 k de 80,5 k en val) están en ~6.500 cobros que
+  `nonitem_unmatched` deja en `CUSTOMER_ADVANCE` sin excepción: cliente identificado, ninguna partida aplicada.
+- En un movimiento que ya está perdido para txn accuracy, añadir pares con precisión > 0,47 sube el Allocation F1
+  (F1 = 2·TP/(pred+gold)). «Precisión ante todo» sigue valiendo para los movimientos que hoy salen bien y para todo
+  lo que consume saldo del ledger antes que el movimiento correcto.
+- Medir SIEMPRE en dos semestres, con salidas aisladas (no pisan `out/val`):
+  `uv run python scripts/backtest.py --start 2025-01-01 --end 2025-07-01 --out out/bt_<tuyo>_2025h1` (= val) y
+  `--start 2024-01-01 --end 2024-07-01 --out out/bt_<tuyo>_2024h1` (anti-overfitting). Entra si sube en 2025-H1 y
+  no baja en 2024-H1; después LIVE. Corre también la base de tu commit para comparar en tu portátil.
 
-| Problema | Tamaño | Dueño |
-|---|---|---|
-| `subset_sum`: 51 k pares, solo el 51 % correctos | ~25 k pares falsos, el 85 % de todos los falsos | P2 |
-| DUPLICATE_PAYMENT, F1 0,44 (P 0,28) | `docs_remit` 1.117 + `docs_ap` 297 filas falsas, ninguna correcta | P2, con P3 |
-| FX_DIFFERENCE, F1 0,32 (R 0,19) | 12,7 k filas golden en `ar_fx`, cobros de 20-60 facturas sin aviso | P2 (`docs_remit`), P3 |
-| Pares sin predecir | `ar_ref_noise` 24,6 k · `ar_short_dispute` 23,6 k · `ar_1toN_credit_note` 19,2 k · `ar_fx` 13,3 k · `ar_1toN_text` 9,6 k · `ar_n_to_m` 4,5 k · `ar_1toN_remittance` 4,4 k | P2 |
-| OVERPAYMENT F1 0,57 · PARTIAL 0,84 · UNIDENTIFIED 0,89 | — | P3, P4 |
-| `multi_ref_fill`: 84 % de precisión | 1,6 k pares falsos | P1 |
+**P1** — integra, mide y mantiene `docs/SCOREBOARD.md`.
+1. Subir lo medido: `multi_ref_cited` (citadas inequívocas de un cobro mayor), `pipeline_post` (suma exacta única
+   sobre el ledger final para los cobros en CUSTOMER_ADVANCE; offline 8,7 k pares al 96,5 %, 1,6 k movimientos
+   exactos), `_overpay_guard`, `parties`, `amount_match.pick_month`, y los de `docs_remit`/`exceptions` (abajo).
+2. `5e5a0d1` restó en val (−0,06) y en LIVE (#13: −0,09): probar a revertir su `multi_ref_fill`/`ranker` encima de
+   lo anterior y, si sube en los dos semestres, revertir.
+3. Probar `multi_ref_cited` antes del `ranker` (el ranker pone 1 sola factura en cobros de varias: 218 txns).
 
-**P2**
-1. `subset_sum`: subir la precisión del 51 % a ≥ 90 % sin perder mucho recall.
-   - Aceptar solo una solución única, un tercero claro (≥ 90), pocas candidatas y una ventana de fechas corta.
-   - Si no está claro, devolver None.
-   - Es lo que más vale: más de 1 punto.
-2. `docs_remit` y `docs_ap`: no asignar partidas que ya están cerradas.
-   - Son 1.414 filas DUPLICATE_PAYMENT falsas.
-   - Corregirlo sube esa clase de 0,44 a unos 0,85: ≈ +0,8.
-3. Cobertura de avisos.
-   - Hay 6.883 avisos y 6.304 abonos casados.
-   - En `ar_short_dispute` faltan 23,6 k pares y en `ar_fx` 13,3 k: revisar los avisos que no casan y los cobros FX con aviso.
-4. `ar_1toN_credit_note`: facturas menos abonos (`multi_ref`/`subset_sum` con ARC).
+**P2** — detalle en `docs/PLAN_MEJORAS.md` §3 P2.
+1. FX en `subset_sum` y `multi_ref`: si `amount > 0` y `orig_currency != currency`, objetivo = `abs(orig_amount_cents)`
+   y partidas en `orig_currency` (`multi_ref.py:210/214/250/268`, `subset_sum.py:213/226`). Val ≈ +0,07; 2024: 124/125.
+2. `multi_ref_fill.py:95`: si las citadas son de varios terceros, elegir el de `parties.score ≥ 80` con más citadas e
+   intentar completar (218 txns). Fichero de P1: avisa antes de tocarlo.
+3. `subset_sum`: última etapa sobre todas las partidas del tercero hasta ~36 (hoy solo las 24 más antiguas), solución
+   única y LAM bajo (≈ +600 pares).
+4. Con P3: cobros de varias facturas con descuento (280 txns, 2-5 facturas, una descontada) o retención (118 txns).
+5. Revisar el cambio de P1 en `docs_remit._map_rows` (números de 1-4 dígitos del layout nuevo; LIVE 479/479).
 
-**P3**
-1. Con P2: una partida con saldo 0 que llega por un aviso o un payment run no es DUPLICATE_PAYMENT.
-   Marcar DUPLICATE_PAYMENT solo si el resolver lo fija (lo hace `amount_match.duplicate`: 649 de 889 correctas).
-2. OVERPAYMENT (P 0,60) y PARTIAL (P 0,90): revisar los falsos con `eval.py --dump` en `ar_overpayment` y `ar_instalment`.
-3. FX_DIFFERENCE: comprobar que toda fila de factura asignada en otra divisa la lleva; los abonos no la llevan.
+**P3** — detalle en `docs/PLAN_MEJORAS.md` §3 P3.
+1. Revisar el cambio de P1 en `exceptions.cross_border` (`/CHGS/` = SHORT_BANK_CHARGES, 108/108 en TRAIN).
+2. Regularización de disputa (`exceptions.py:425`): `REGULARIZACION|SETTLEMENT` (no "CARD SETTLEMENT") y una sola
+   factura viva → excepción vacía, importe = efectivo (TRAIN 5.125 filas, todas así).
+3. Comprobar `finalize` sobre las propuestas nuevas de P1 (`multi_ref_cited`: suma < cobro; `pipeline_post`: suma
+   exacta): nada de PARTIAL/SHORT_*/OVERPAYMENT espurios; FX_DIFFERENCE solo en facturas.
+4. Con P2 (tarea 4): importe = saldo completo con SHORT_DISCOUNT/SHORT_WITHHOLDING; en FX, FX_DIFFERENCE.
+5. `ar_dd_returned` (47 FN/47 FP) y `ar_dd_represented_transfer` (32/29): sin mirar.
 
-**P4**
-1. Enviar el candidato #8 y anotarlo con su SHA-256.
-   - Regla: un solo cambio por envío y siempre desde un commit de main medido en val.
-2. Ensayo de respaldo de FINAL con `--phase live` en su portátil.
-   - Mismo commit que P1; el SHA-256 debe coincidir con el de P1.
-3. `1d8f290` restó 0,10 en val (precisión 0,954 → 0,951): revisar «ARC pagada por transferencia».
-4. `unidentified` (acierto 0,87) y `unidentified_lookalike` (0,82) con `eval.py --dump`.
+**P4** — detalle en `docs/PLAN_MEJORAS.md` §3 P4.
+1. UNIDENTIFIED en `nonitem_unmatched`: veto si el texto trae un número impreso (TRAIN: 0 UNIDENTIFIED entre 395 k),
+   y CUSTOMER_ADVANCE → UNIDENTIFIED solo con tercero por nombre/ref (nunca IBAN) y efectivo redondo
+   (`cash % 10000 == 0`) o < 2 × la factura viva más pequeña (325 txns: 272 TP / 53 FP). Va después del post-pass de
+   P1 en la práctica: no muevas cobros que el post-pass resuelve (compruébalo con el audit, resolver `postpass_subset`).
+2. Cobros de una sola factura en el cubo CUSTOMER_ADVANCE: `short_cash._shapes` sobre `f["cli"] ∪ f["iban"]` (sc ≥ 90)
+   con acierto único (OVERPAYMENT 34/6, saldo exacto 27/0, parcial 17/1).
+3. LIVE como árbitro de cada cambio; SCOREBOARD con val, 2024-H1 y LIVE.
 
-**P1**
-1. Integrar y medir en val cada push antes de cada envío. Mantener `docs/SCOREBOARD.md`.
-2. 17:45: congelar main. 18:00: FINAL según la guía de pasos.
-3. `multi_ref_fill`: subir su precisión (84 %).
-4. `amount_match`: revisar sus 466 pares falsos en `ar_same_amount_fifo` y `ar_1to1`.
-
-**Reglas hasta el final**
-- Commit y push por subtarea terminada, con smoke en verde.
-- Toda mejora se anota en el scoreboard con su val antes y después.
-- Después de las 17:45 solo entra lo que P1 haya medido.
+**Reglas**
+- Un cambio por commit, `smoke.py` en verde, `git pull --rebase` antes de push. Ficheros de otro rol: avisa a su dueño.
+- Cada commit con su nota en 2025-H1 y 2024-H1 en el mensaje o en el SCOREBOARD.
