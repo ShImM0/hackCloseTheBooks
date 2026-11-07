@@ -8,6 +8,7 @@
 | 2026-11-07 11:06 | P1 | medición equipo en 707fc7c (nonitem + router + docs_dd) | 18.98 | 17.00 (P 0.998 R 0.132) | — |
 | 2026-11-07 11:35 | P1 | refs + parties + ledger FIFO + text_ref + amount_match (1:1 importe exacto) | 39.31 | 38.30 (P 0.997 R 0.249) | — |
 | 2026-11-07 | P4 | auditoría 2023/2024 sin cambiar reglas; val completo + comprobación de ids conocidos | — | 38.29 (P 0.9969 R 0.2492) | sin envío confirmado |
+| 2026-11-07 12:10 | P1 | text_ref.by_ref: referencia + tercero sin importe exacto (+ exceptions P3) | — | 44.35 (P 0.988 R 0.276) | — |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe

@@ -32,9 +32,14 @@ def candidates(txn: dict, ledger) -> list[str]:
         return []
     typ = "ARI" if cents > 0 else "API"
     ents = (txn["entity"],) if cents > 0 else PAYMENT_FACTORY.get(txn["entity"], (txn["entity"],))
+    # FX (§3 FX_DIFFERENCE): el banco trae el importe original en la divisa de la factura (orig_amount);
+    # en TRAIN 2024 orig_currency == divisa de la partida en el 100 % de las líneas FX
+    cur, amt = txn["currency"], abs(cents)
+    if txn.get("orig_currency") and txn["orig_currency"] != cur and txn.get("orig_amount_cents"):
+        cur, amt = txn["orig_currency"], abs(txn["orig_amount_cents"])
     out = []
     for e in ents:
-        for iid in ledger.with_amount(e, txn["currency"], abs(cents)):
+        for iid in ledger.with_amount(e, cur, amt):
             i = ledger.info[iid]
             if i[0] == typ and (i[4] is None or i[4] <= txn["booking_date"]):
                 out.append(iid)
@@ -50,6 +55,14 @@ def pick_month(cands: list[str], ledger, months: set[int]) -> str | None:
 
 
 def resolve(txn: dict, ctx, ledger) -> Proposal | None:
+    p = _exact(txn, ctx, ledger)
+    if p is None:
+        from bankrec.resolvers import text_ref
+        p = text_ref.by_ref(txn, ctx, ledger)
+    return p
+
+
+def _exact(txn: dict, ctx, ledger) -> Proposal | None:
     cands = candidates(txn, ledger)
     if not cands:
         return None
@@ -70,5 +83,5 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
         m = pick_month(mine, ledger, refs.months(refs.haystack(txn)))
         if m:
             pick, why = m, "mes de servicio"
-    return Proposal(txn["bank_txn_id"], [Alloc(pick, abs(txn["amount_cents"]))], confidence=best / 100,
+    return Proposal(txn["bank_txn_id"], [Alloc(pick, ledger.open[pick])], confidence=best / 100,
                     reason=f"tercero {best_pid} ({best:.0f}) + importe, {why}")
