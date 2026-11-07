@@ -19,3 +19,5 @@ No se ha podido comprobar la fila histórica del starter LIVE: el artefacto no e
 Detalle y estrategia de evaluación sin fuga: `reports/P4_QA.md`.
 
 - 2026-11-07T10:04:27.771974+00:00 · P4 · LIVE PREPARADO, NO ENVIADO: `out/live/prepared_20261107T100427771974Z_34942b0cce96.csv.gz` · SHA-256 `34942b0cce969d3cc222b765832c55f8d453f5ad5ed34563b2fad4e72645088e` · 203083 movimientos. Nota pendiente de envío manual.
+
+- 2026-11-07T10:13:27.597934+00:00 · P4 · LIVE PREPARADO, NO ENVIADO: `out/live/prepared_20261107T101327597934Z_aad15d82163d.csv.gz` · SHA-256 `aad15d82163d71fcd2786ac2e13a3c90c604951ccc635eaf8631ed4d9920f944` · 203083 movimientos. Nota pendiente de envío manual.
