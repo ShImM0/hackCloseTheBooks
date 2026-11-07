@@ -73,6 +73,28 @@ def _items_of(folder: str) -> pl.DataFrame:
     return pl.concat(parts, how="vertical_relaxed").select(ITEM_COLS)
 
 
+def attach_attributes(oi: pl.DataFrame, prior: pl.DataFrame) -> pl.DataFrame:
+    """Saldo del fichero oficial + atributos de las fases anteriores. Lo que falte (partidas de una filial nueva,
+    p. ej. ZA01 en FINAL) se toma de las columnas del propio open_items_at_start."""
+    own = oi.select("item_id", pl.col("open_amount_cents").alias("open_cents"),
+                    *[pl.col(c).alias(f"_{c}") for c in ("item_type", "entity", "party_id", "document_number",
+                                                         "issue_date", "due_date", "currency")],
+                    pl.col("total_amount_cents").alias("_total_cents"))
+    out = own.join(prior, on="item_id", how="left")
+    fill = [pl.coalesce(c, f"_{c}").alias(c) for c in ("item_type", "entity", "party_id", "document_number",
+                                                       "issue_date", "due_date", "currency", "total_cents")]
+    return out.with_columns(fill).select(ITEM_COLS + ["open_cents"])
+
+
+def _check_final_masters(end: dt.date) -> None:
+    """FINAL sin masters_final/ o con tipos de cambio que no llegan al periodo: avisar (no romper)."""
+    if not (config.data_dir() / "final" / "masters_final").exists():
+        log.warning("FINAL sin final/masters_final/: se usan los maestros del repo (sin ZA01, renombrados ni fx 2026)")
+    fx_last = load.master("fx_rates", "final")["date"].max()
+    if fx_last is None or fx_last < end - dt.timedelta(days=10):
+        log.warning("fx_rates llega solo hasta %s (FINAL acaba %s): FX con tipos viejos", fx_last, end)
+
+
 def window(name: str, months: int | None = None) -> tuple[dt.date, dt.date]:
     """[inicio, fin) de los movimientos de la fase; months recorta a los N primeros meses."""
     _, start_s, end_s = config.PHASES[name]
@@ -105,12 +127,13 @@ def build(name: str, months: int | None = None) -> Phase:
         # live/final: saldo abierto del fichero oficial + atributos de las fases anteriores
         oi = load.table(folder, "open_items_at_start")
         prior = pl.concat([_items_of(f) for f in config.PRIOR_FOLDERS[name]], how="vertical_relaxed")
-        before = (oi.select("item_id", pl.col("open_amount_cents").alias("oc"))
-                  .join(prior, on="item_id", how="left")
-                  .with_columns(pl.col("oc").alias("open_cents")).drop("oc"))
-        missing = before.filter(pl.col("entity").is_null()).height
+        before = attach_attributes(oi, prior)
+        missing = before.filter(pl.col("payment_terms").is_null() & pl.col("item_type").is_in(["ARI", "API"])).height
         if missing:
-            log.warning("%d partidas abiertas sin atributos en fases previas", missing)
+            # p. ej. ZA01 en FINAL: sus facturas anteriores no están en train/live; quedan con lo que trae el fichero
+            log.warning("%d partidas abiertas sin historial en fases previas (atributos del propio fichero)", missing)
+        if name == "final":
+            _check_final_masters(end)
         items = pl.concat([before.select(ITEM_COLS + ["open_cents"]),
                            items_here.with_columns(pl.col("total_cents").alias("open_cents"))])
 
