@@ -146,3 +146,18 @@ solo la factura citada (15/68 pares); `subset_sum` 3 cobros 19/50.
 - «Factura citada + resto FIFO» cuando el cobro supera la citada (`scripts/p3_nm_fill.py`): ar_n_to_m 16/25 ok
   (hoy 0), pero ar_overpayment 7/9 (hoy 9/9). Hace falta un discriminante (p. ej. texto con varias referencias /
   cortado, o exceso ≥ una factura entera del cliente) antes de proponerlo. Es de text_ref / multi_ref_fill (P1).
+
+## ar_n_to_m en val 6 meses (HEAD 69d902a + corrección docs_remit): dónde se pierde y qué NO hacer
+
+Acierto 46 % (1.857 cobros). Scripts: p3_nm_fifo_val.py, p3_nm_cited.py, p3_nm_ledger.py (offline, leen golden).
+- 774 sin casar; 630 no citan ninguna factura (ACH "PAYMENT ID", "TT IN"). FIFO con la última parcial sobre los
+  cobros sin casar de val: precisión de pares 12,7 % (25/5.289 cobros) y 293 cobros UNIDENTIFIED reales con partidas
+  falsas → NO aplicar FIFO sin referencia.
+- multi_ref: 1.894/1.901 pares bien pero 77 cobros con PARTIAL de más: es el 2º pago de una factura cuyo 1er parcial
+  (también ar_n_to_m) quedó sin casar (63 de 71). No es fallo de exceptions.py: es arrastre del ledger.
+- Todas citadas y efectivo == suma de saldos reales, sin casar: 38 cobros; en 34 nuestro ledger está mal en ese
+  momento (20 parcial previo sin casar, 15 otra partida consumida antes). Solo 4 son fallo del resolver.
+- nm_partial: aportaba +0,10 antes de 3956fad; con el multi_ref nuevo de P2, 94,12 con y sin él → fuera.
+- multi_ref_fill (P1): mayor fuente de pares falsos de val (922). Citadas 98,7 % de precisión, relleno 68,6 %.
+  Limitar el relleno a ≤ 3/5/8 partidas quita 911/862/587 falsos pero pierde 3.237/2.037/1.151 buenos → NO.
+Conclusión: el techo de ar_n_to_m lo marcan los cobros sin referencia y el arrastre del ledger, no una regla nueva.

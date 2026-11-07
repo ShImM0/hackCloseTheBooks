@@ -268,11 +268,26 @@ def finalize(prop: Proposal, txn: dict, ctx, ledger) -> Proposal | None:
         # con el efectivo que queda (retención en origen, pronto pago...)
         fixed = [i for i, (a, _, _) in enumerate(rows) if a.exception and a.exception != "FX_DIFFERENCE"]
         free = [i for i in range(len(rows)) if i not in fixed]
-        offset = 0
-        for i in fixed:
-            a, info, _ = rows[i]
-            offset += abs(a.amount_cents) if info[0] in INVOICES else -abs(a.amount_cents)
-        sub = _free_rows([rows[i] for i in free], txn, st, fx, tcur, icur, offset, ar, doc)
+        if doc:
+            # resolver de documentos (aviso de remesa): el aviso dice qué se pagó de cada fila libre; se conserva.
+            # Recalcular con "efectivo − filas fijadas" falla: las fijadas SHORT_DISCOUNT/SHORT_WITHHOLDING llevan el
+            # bruto (POLICIES §2) pero se pagó el neto, y la suma de deducciones acababa como PARTIAL en una fila libre
+            # (val 6 meses: 49 de 50 cobros con ese fallo). Solo se explica lo pagado < saldo (a cuenta en el aviso).
+            sub = []
+            for i in free:
+                a, info, op = rows[i]
+                amt = abs(a.amount_cents)
+                if info[0] in INVOICES and op > 0 and 0 < amt < op - 2:
+                    sub.append(_explain_explicit(rows[i], op, amt, txn["booking_date"], st, 2,
+                                                 charges_possible(txn, st, info[1])))
+                else:
+                    sub.append(Alloc(a.item_id, amt or max(op, 0), ""))
+        else:
+            offset = 0
+            for i in fixed:
+                a, info, _ = rows[i]
+                offset += abs(a.amount_cents) if info[0] in INVOICES else -abs(a.amount_cents)
+            sub = _free_rows([rows[i] for i in free], txn, st, fx, tcur, icur, offset, ar, doc)
         out = [None] * len(rows)
         for i in fixed:
             out[i] = Alloc(rows[i][0].item_id, abs(rows[i][0].amount_cents), rows[i][0].exception)
