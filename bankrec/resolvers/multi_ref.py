@@ -18,6 +18,7 @@ Qué hace (POLICIES §5.5 referencias ruidosas, §5.9 abonos netos, §3 excepcio
 Números cortados con prefijo genérico (más de MAX_POOL partidas en la entidad): elegido el tercero, se buscan en sus
 facturas abiertas y solo cuentan si el token casa con UNA. Si alguna factura citada tiene saldo == importe y no hay
 suma exacta de >= 2 partidas, es un 1:1: lo resuelve text_ref (2 y 3 no se intentan).
+Cobro en otra divisa (§3 FX_DIFFERENCE): partidas en `orig_currency` y objetivo `orig_amount` (divisa de la partida).
 Sin referencias lo resuelve subset_sum. Precisión antes que recall.
 Tolera número sin prefijo, cortado y con erratas (refs.ref_score >= REF_MIN); el tercero debe encajar (parties).
 Entradas: txn, ctx, ledger. Salida: Proposal con una Alloc por partida al saldo abierto, o None.
@@ -208,6 +209,11 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     types = _TYPES[credit]
     ents = (txn["entity"],) if credit else PAYMENT_FACTORY.get(txn["entity"], (txn["entity"],))
     cur, day = txn["currency"], txn["booking_date"]
+    target = abs(amt)
+    # §3 FX_DIFFERENCE: cobro en otra divisa -> partidas en la divisa original y objetivo = importe original del banco
+    # (orig_amount); finalize (P3) pone FX_DIFFERENCE en las facturas y deja los abonos sin excepción
+    if credit and txn.get("orig_currency") and txn["orig_currency"] != cur and txn.get("orig_amount_cents"):
+        cur, target = txn["orig_currency"], abs(txn["orig_amount_cents"])
 
     def live(c: str) -> bool:
         i = ledger.info[c]
@@ -247,7 +253,7 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
         nums = {refs.digits(ledger.info[c][5]) for c in v}
         if len(v) >= 2 or cited_notes.get(p) or any(sh["rel"].get(n) in nums for n in sh["notes"].get(p, ())):
             cands[p] = v
-        elif ledger.open[v[0]] < abs(amt):
+        elif ledger.open[v[0]] < target:
             cands[p] = v
     if not cands:
         return None
@@ -265,7 +271,6 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     if len(ok) > 1 and ok[0][0] - ok[1][0] < PARTY_GAP:
         return None
     s, pid, cited = ok[0]
-    target = abs(amt)
     # una factura citada con saldo == importe es un 1:1 (text_ref): solo se acepta aquí la suma exacta de >= 2
     one_to_one = any(ledger.open[c] == target for v in by_party.values() for c in v)
     mine = [c for c in sh["party"].get(pid, ()) if live(c)]
