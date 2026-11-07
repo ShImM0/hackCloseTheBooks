@@ -25,7 +25,6 @@ NAME = "multi_ref_fill"
 REF_MIN = 85       # mismo umbral que text_ref
 PARTY_MIN = 80
 MAX_FREE = 22      # partidas no citadas que entran en la búsqueda (2^11 por mitad)
-MAX_PARTY = 400    # terceros con más partidas abiertas: se toman las MAX_FREE más cercanas en fecha a las citadas
 
 
 def prepare(ctx) -> None:
@@ -99,21 +98,17 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
         return None
     sign = {c: (-1 if ledger.info[c][0] == "ARC" else 1) for c in forced}
     rest = cash - sum(sign[c] * ledger.open[c] for c in forced)
-    chosen = list(forced)
+    chosen = sorted(forced, key=ledger._fifo)
     if rest != 0:
         free = [c for c in ctx.shared[NAME].get(pid, ()) if c not in forced and ledger.open.get(c, 0) > 0
-                and ledger.info[c][2] == cur and (ledger.info[c][4] is None or ledger.info[c][4] <= txn["booking_date"])]
+                and ledger.info[c][1] == txn["entity"] and ledger.info[c][2] == cur
+                and (ledger.info[c][4] is None or ledger.info[c][4] <= txn["booking_date"])]
         if rest < 0:   # citadas > cobro: solo un abono puede netear la diferencia (§3, §5.9)
             free = [c for c in free if ledger.info[c][0] == "ARC"]
         if len(free) > MAX_FREE:
-            if len(free) > MAX_PARTY:
-                return None
-            ref_dates = [ledger.info[c][4] for c in forced if ledger.info[c][4]]
-            if not ref_dates:
-                return None
-            mid = max(ref_dates)
-            free.sort(key=lambda c: abs((ledger.info[c][4] or mid) - mid))
-            free = free[:MAX_FREE]
+            # §3 UNIDENTIFIED: una solución única sobre una muestra no prueba unicidad en el conjunto real.
+            return None
+        free.sort(key=ledger._fifo)
         vals = [(-1 if ledger.info[c][0] == "ARC" else 1) * ledger.open[c] for c in free]
         pick = _subsets(vals, rest)
         if pick is None:

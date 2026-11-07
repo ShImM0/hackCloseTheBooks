@@ -8,7 +8,9 @@ recalcula importe y excepción (SHORT_*, PARTIAL, FX_DIFFERENCE...).
 
 Entrenamiento (anti-overfitting, CLAUDE.md): solo movimientos de TRAIN con booking_date < ctx.start (último año), sin
 segment/difficulty/ids. Partidas abiertas a la fecha aproximadas: emitidas en los OPEN_DAYS previos y sin pago anterior
-según el golden (el golden solo se usa para etiquetar el histórico, nunca en resolve). Modelo en caché por fase.
+según el golden (el golden solo se usa para etiquetar el histórico, nunca en resolve). Los últimos 60 días del
+histórico se reservan para parada temprana; todas las candidatas de un movimiento van al mismo bloque temporal.
+Features monetarias relativas al saldo/total, sin magnitudes absolutas que memoricen importes. Caché por fase.
 Entradas: txn, ctx, ledger. Salida: Proposal o None.
 """
 from __future__ import annotations
@@ -32,15 +34,20 @@ log = logging.getLogger("bankrec")
 NAME = "ranker"
 BAND = 0.25          # importe del movimiento dentro de ±25 % del total de la partida
 MAX_C = 30           # candidatas máximas por movimiento
-THRESH = 0.5         # prob. mínima; en val la precisión de pares es 0,991 plana de 0,5 a 0,8 (el margen filtra)
+THRESH = 0.5         # probabilidad mínima; además se exige margen y evidencia de referencia o tercero
 MARGIN = 0.3         # ventaja mínima sobre la segunda candidata
 OPEN_DAYS = 400      # ventana de emisión de partidas abiertas en el entrenamiento
 HIST_DAYS = 365      # histórico de entrenamiento: último año antes de ctx.start
 N_TRAIN = 40_000     # movimientos muestreados para entrenar (~2 min)
-VERSION = "v1"       # cambia si cambian las features (invalida la caché)
+VALID_DAYS = 60      # bloque temporal fuera del ajuste, siempre anterior a la fase evaluada
+EARLY_STOPPING = 30
+MODEL_PARAMS = dict(n_estimators=500, learning_rate=0.05, num_leaves=31, max_depth=6,
+                    min_child_samples=100, reg_lambda=5.0, subsample=0.8, subsample_freq=1,
+                    colsample_bytree=0.8, verbose=-1, random_state=7, n_jobs=4)
+VERSION = "v2"       # features relativas, negativos 1:N y validación temporal; invalida modelos anteriores
 
-FEATS = ["ratio", "logdiff", "exact", "ratio_total", "ref", "pscore", "days_issue", "days_due", "fx", "is_ap",
-         "n_cands", "n_party", "fifo_rank", "month_hit", "diff_rank", "pscore_rank", "logamt", "n_exact", "other_ent"]
+FEATS = ["ratio", "log_relative_diff", "exact", "ratio_total", "ref", "pscore", "days_issue", "days_due", "fx", "is_ap",
+         "n_cands", "n_party", "fifo_rank", "month_hit", "diff_rank", "pscore_rank", "log_open_share", "n_exact", "other_ent"]
 
 
 class _Index:
@@ -76,10 +83,14 @@ def _cands(txn: dict, I: _Index, ibmap: dict, open_of, toks: list[str]) -> list[
     typ = "ARI" if cents > 0 else "API"
     ents = (txn["entity"],) if cents > 0 else PAYMENT_FACTORY.get(txn["entity"], (txn["entity"],))
     d = txn["booking_date"]
+    currencies = {txn["currency"]}
+    if txn.get("orig_currency") and txn.get("orig_amount_cents"):
+        currencies.add(txn["orig_currency"])
 
     def ok(iid):
         i = I.info.get(iid)
-        return i and i[0] == typ and i[1] in ents and (i[4] is None or i[4] <= d) and open_of(iid) > 0
+        return (i and i[0] == typ and i[1] in ents and i[2] in currencies
+                and (i[4] is None or i[4] <= d) and open_of(iid) > 0)
 
     found: dict[str, int] = {}   # iid -> prioridad (0 ref/IBAN, 1 importe)
     for t in toks:
@@ -87,8 +98,8 @@ def _cands(txn: dict, I: _Index, ibmap: dict, open_of, toks: list[str]) -> list[
             for iid in I.ref.get(t[-5:], ()):
                 if ok(iid) and refs.ref_score(I.info[iid][6], [t]) + refs.ref_score(I.info[iid][7], [t]) >= 75:
                     found[iid] = 0
-    for ib in refs.ibans(txn):
-        for pid in ibmap.get(ib, ()):
+    for ib in sorted(refs.ibans(txn)):
+        for pid in sorted(ibmap.get(ib, ())):
             for iid in I.party.get(pid, ()):
                 if len(found) >= 4 * MAX_C:   # shortcut: terceros enormes se cortan; el importe sigue aportando
                     break
@@ -117,7 +128,7 @@ def _cands(txn: dict, I: _Index, ibmap: dict, open_of, toks: list[str]) -> list[
                     n += 1
     near.sort()
     a0 = abs(cents)
-    out = sorted(found, key=lambda iid: abs(open_of(iid) - a0))[:MAX_C]
+    out = sorted(found, key=lambda iid: (abs(open_of(iid) - a0), iid))[:MAX_C]
     for _, iid in near:   # sin duplicados (la pasada en divisa original puede repetir partidas)
         if len(out) >= MAX_C:
             break
@@ -140,10 +151,10 @@ def _feats(txn: dict, cands: list[str], I: _Index, open_of, tctx: dict, toks: li
             pcache[pid] = parties.score(tctx, pid, ctx)
         rs = max(refs.ref_score(doc, toks), refs.ref_score(po, toks) if po else 0)
         hit = 1.0 if (mon and iss and (iss.month - 2) % 12 + 1 in mon) else 0.0
-        rows.append([a / op, math.log1p(abs(a - op)), float(a == op), a / tot, rs, pcache[pid],
+        rows.append([a / op, math.log1p(abs(a - op) / op), float(a == op), a / tot, rs, pcache[pid],
                      (d - iss).days if iss else np.nan, (d - due).days if due else np.nan,
                      float(cur != txn["currency"]), float(typ == "API"), len(cands), 0, 0, hit, 0, 0,
-                     math.log1p(a), 0, float(ent != txn["entity"])])
+                     math.log1p(op / tot), 0, float(ent != txn["entity"])])
     X = np.array(rows, dtype=np.float64)
     # features relativas al conjunto de candidatas
     pids = [I.info[c][3] for c in cands]
@@ -160,24 +171,41 @@ def _feats(txn: dict, cands: list[str], I: _Index, open_of, tctx: dict, toks: li
 
 def _tctx(txn: dict) -> tuple[dict, list[str]]:
     tc = parties.context(txn)
-    tc["hay_raw"] = refs.haystack(txn)
+    tc["hay_raw"] = refs.joined(refs.haystack(txn))
     return tc, refs.tokens(tc["hay_raw"])
+
+
+def _fit_temporal(X: np.ndarray, y: np.ndarray, dates: np.ndarray, hi: dt.date):
+    """Ajuste regularizado y parada temprana en un bloque posterior, sin usar etiquetas de la fase."""
+    import lightgbm as lgb
+
+    split = (hi - dt.timedelta(days=VALID_DAYS)).toordinal()
+    train = dates < split
+    valid = (dates >= split) & (dates < hi.toordinal())
+    if np.any(dates >= hi.toordinal()):
+        raise ValueError("ranker: etiquetas fuera del histórico permitido")
+    if len(np.unique(y[train])) < 2 or len(np.unique(y[valid])) < 2:
+        raise ValueError("ranker: histórico insuficiente para separar ajuste y validación temporal")
+    model = lgb.LGBMClassifier(**MODEL_PARAMS)
+    model.fit(X[train], y[train], eval_set=[(X[valid], y[valid])], eval_metric="binary_logloss",
+              feature_name=FEATS, callbacks=[lgb.early_stopping(EARLY_STOPPING, verbose=False)])
+    log.info("ranker: ajuste %d pares, validación %d pares, %d árboles", train.sum(), valid.sum(),
+             model.best_iteration_)
+    return model.booster_
 
 
 def _train(ctx, cut: dt.date) -> "object":
     """Entrena con TRAIN, booking_date en el último año antes de min(cut, fin de TRAIN)."""
-    import lightgbm as lgb
-
     t0 = dt.datetime.now()
     tx = load.table("train", "bank_transactions")
     gold = load.table("train", "golden_allocations").select("bank_txn_id", "item_id")
     hi = min(cut, tx["booking_date"].max() + dt.timedelta(days=1))   # FINAL: último año de TRAIN, no 2025-H1 solo
     lo = hi - dt.timedelta(days=HIST_DAYS)
     tx = tx.filter((pl.col("booking_date") >= lo) & (pl.col("booking_date") < hi) & (pl.col("amount_cents") != 0))
-    # etiqueta: movimientos con 0 o 1 partida (lo que puede resolver un 1:1)
+    # Un lote 1:N es un negativo para este resolver 1:1: no debe aprender a liquidar solo una de sus facturas.
     g = gold.filter(pl.col("bank_txn_id").is_in(tx["bank_txn_id"].implode()))
     per = g.group_by("bank_txn_id").agg(pl.col("item_id").drop_nulls().alias("items"))
-    tx = tx.join(per, on="bank_txn_id", how="inner").filter(pl.col("items").list.len() <= 1)
+    tx = tx.join(per, on="bank_txn_id", how="inner").sort("booking_date", "bank_txn_id")
     if tx.height > N_TRAIN:
         tx = tx.sample(N_TRAIN, seed=7)
     # partidas de TRAIN con fecha del primer pago (golden de movimientos anteriores a ctx.start)
@@ -189,7 +217,7 @@ def _train(ctx, cut: dt.date) -> "object":
     fp = dict(zip(*first.select("item_id", "fp").to_dict(as_series=False).values()))
     I = _Index(items)
     ibmap = ctx.shared["parties"]["iban"]
-    Xs, ys = [], []
+    Xs, ys, dates = [], [], []
     for txn in tx.iter_rows(named=True):
         d = txn["booking_date"]
 
@@ -203,16 +231,17 @@ def _train(ctx, cut: dt.date) -> "object":
         if not cands:
             continue
         X = _feats(txn, cands, I, open_of, tc, toks, ctx)
-        gi = set(txn["items"])
+        gi = set(txn["items"]) if len(txn["items"]) == 1 else set()
         Xs.append(X)
         ys.append(np.array([c in gi for c in cands], dtype=np.int8))
+        dates.append(np.full(len(cands), d.toordinal(), dtype=np.int64))
+    if not Xs:
+        raise ValueError("ranker: histórico sin candidatas")
     X, y = np.vstack(Xs), np.concatenate(ys)
     log.info("ranker: %d pares (%d positivos) de %d movimientos", len(y), int(y.sum()), len(Xs))
-    m = lgb.LGBMClassifier(n_estimators=300, learning_rate=0.05, num_leaves=63, min_child_samples=50,
-                           subsample=0.8, subsample_freq=1, colsample_bytree=0.8, verbose=-1, random_state=7)
-    m.fit(X, y)
+    booster = _fit_temporal(X, y, np.concatenate(dates), hi)
     log.info("ranker: entrenado en %.0f s", (dt.datetime.now() - t0).total_seconds())
-    return m.booster_
+    return booster
 
 
 def prepare(ctx) -> None:
@@ -222,7 +251,8 @@ def prepare(ctx) -> None:
     parties.prepare(ctx)
     # sample (2025-06) está dentro de val: reutiliza el modelo de val (corte 2025-01), sin reentrenar
     name, cut = ("val", dt.date.fromisoformat(config.PHASES["val"][1])) if ctx.name == "sample" else (ctx.name, ctx.start)
-    key = hashlib.md5(f"{VERSION}|{cut}|{N_TRAIN}|{HIST_DAYS}|{FEATS}".encode()).hexdigest()[:10]
+    key = hashlib.md5(f"{VERSION}|{cut}|{N_TRAIN}|{HIST_DAYS}|{OPEN_DAYS}|{BAND}|{MAX_C}|{FEATS}|"
+                      f"{VALID_DAYS}|{EARLY_STOPPING}|{MODEL_PARAMS}".encode()).hexdigest()[:10]
     path = config.cache_dir() / f"ranker_{name}_{key}.txt"
     if path.exists():
         booster = lgb.Booster(model_file=str(path))
