@@ -1,0 +1,115 @@
+"""Evalúa una submission contra el golden con el scorer oficial. Dueño: P4 (versión inicial de P1).
+
+    uv run python scripts/eval.py --phase val|sample [--sub RUTA] [--months N] [--segment X] [--dump N]
+
+- Imprime métricas y precisión por segmento (golden.segment).
+- --dump N vuelca N movimientos fallados del segmento (--segment) o de todos a out/<fase>/failures_<segmento>.md:
+  movimiento, golden, predicción y resolver/razón del audit.
+- Para val escribe antes un golden y una lista de movimientos filtrados en out/val/ (el golden completo de
+  TRAIN son 5,4 M filas y el scorer lo carga en dicts de Python).
+"""
+import argparse
+import json
+import sys
+
+import polars as pl
+
+from bankrec import config, phase as phase_mod
+from bankrec.validate import categories, scorer
+
+
+def golden_files(phase: str, months):
+    """Golden y lista de movimientos de la fase/ventana, en out/<fase>/ (csv.gz para el scorer oficial)."""
+    folder = config.PHASES[phase][0]
+    start, end = phase_mod.window(phase, months)
+    from bankrec import load
+    t = load.table(folder, "bank_transactions")
+    t = t.filter((pl.col("booking_date") >= start) & (pl.col("booking_date") < end))
+    g = load.table(folder, "golden_allocations").filter(pl.col("bank_txn_id").is_in(t["bank_txn_id"].implode()))
+    out = config.out_dir(phase)
+    gp, tp = out / "golden.csv.gz", out / "txns.csv.gz"
+    import gzip
+    with gzip.open(gp, "wb") as fh:
+        g.select("bank_txn_id", "item_id", "amount", "category", "exception", "segment", "difficulty").write_csv(fh)
+    with gzip.open(tp, "wb") as fh:
+        t.select("bank_txn_id").write_csv(fh)
+    return gp, tp, t, g
+
+
+def main():
+    sys.stdout.reconfigure(encoding="utf-8")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--phase", default="val", choices=["val", "sample"])
+    ap.add_argument("--sub", default=None)
+    ap.add_argument("--months", type=int, default=None)
+    ap.add_argument("--segment", default=None)
+    ap.add_argument("--dump", type=int, default=0)
+    a = ap.parse_args()
+    S = scorer()
+    sub = a.sub or str(config.out_dir(a.phase) / "submission.csv.gz")
+    gp, tp, txns, gold = golden_files(a.phase, a.months)
+    G = S.load_golden(str(gp), str(tp), config.EXCEPTIONS, categories(a.phase))
+    res = S.score_submission(G, open(sub, "rb").read(), sub)
+    if not res["ok"]:
+        print(json.dumps(res["errors"], indent=1, ensure_ascii=False))
+        sys.exit(1)
+    m = res["metrics"]
+    print(f"SCORE {res['score']:.2f} | allocF1 {m['allocation_f1']:.4f} (P {m['precision']:.4f} R {m['recall']:.4f}) | "
+          f"txnAcc {m['txn_accuracy']:.4f} | excF1 {m['exception_macro_f1']:.4f} | amtAcc {m['amount_weighted_accuracy']:.4f}")
+    segs = sorted(res["segments"].items(), key=lambda x: -x[1]["n"] * (1 - x[1]["accuracy"]))
+    print(f"{'segmento':32s} {'n':>7s} {'acc':>6s} {'fallos':>7s}")
+    for k, v in segs:
+        if a.segment and k != a.segment:
+            continue
+        print(f"{k:32s} {v['n']:7d} {v['accuracy']:6.3f} {round(v['n'] * (1 - v['accuracy'])):7d}")
+    if a.dump:
+        dump(a, sub, txns, gold, G, S)
+
+
+def _rows_by_txn(df: pl.DataFrame) -> dict:
+    out = {}
+    for r in df.iter_rows(named=True):
+        out.setdefault(r["bank_txn_id"], []).append(r)
+    return out
+
+
+def dump(a, sub, txns, gold, G, S):
+    """Vuelca fallos: compara (item, importe±tol, excepción) / (categoría, excepción) como el scorer."""
+    seg = a.segment
+    pred = pl.read_csv(sub, infer_schema=False)
+    if seg:
+        ids = gold.filter(pl.col("segment") == seg)["bank_txn_id"].unique()
+        pred = pred.filter(pl.col("bank_txn_id").is_in(ids.implode()))
+        gold = gold.filter(pl.col("bank_txn_id").is_in(ids.implode()))
+    P, Gr = _rows_by_txn(pred), _rows_by_txn(gold)
+    audit_p = config.out_dir(a.phase) / "audit.parquet"
+    audit = {r["bank_txn_id"]: r for r in pl.read_parquet(audit_p).iter_rows(named=True)} if audit_p.exists() else {}
+    tx = {r["bank_txn_id"]: r for r in txns.filter(pl.col("bank_txn_id").is_in(list(Gr))).iter_rows(named=True)}
+
+    def ok(t):
+        gi, gcat, gexc, _ = G.txns[t]
+        ps = P.get(t, [])
+        if not gi:
+            return len(ps) == 1 and not ps[0]["item_id"] and (ps[0]["category"] or "") == gcat and (ps[0]["exception"] or "") == gexc
+        pi = {r["item_id"]: r for r in ps if r["item_id"]}
+        return len(pi) == len(gi) == len(ps) and all(
+            i in pi and abs(float(pi[i]["amount"]) - ga) <= S._tol(ga) and (pi[i]["exception"] or "") == ge for i, (ga, ge) in gi.items())
+
+    fails = [t for t in sorted(Gr) if not ok(t)][: a.dump]
+    path = config.out_dir(a.phase) / f"failures_{seg or 'all'}.md"
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(f"# Fallos {a.phase} · segmento {seg or 'todos'} ({len(fails)} mostrados)\n\n")
+        for t in fails:
+            x = tx.get(t, {})
+            fh.write(f"## {t} · {x.get('booking_date')} · {x.get('account_id')} · {x.get('amount')} {x.get('currency')}\n")
+            fh.write(f"- text: `{x.get('text')}`\n- ref1/ref2: `{x.get('ref1')}` / `{x.get('ref2')}` · cpty: `{x.get('counterparty_name')}` "
+                     f"`{x.get('counterparty_account')}` · rmt: `{x.get('remittance_info')}` · e2e: `{x.get('end_to_end_id')}`\n")
+            au = audit.get(t, {})
+            fh.write(f"- resolver: {au.get('resolver')} ({au.get('confidence')}) {au.get('reason') or ''}\n")
+            fh.write("- golden: " + "; ".join(f"{r['item_id'] or r['category']} {r['amount'] or ''} {r['exception'] or ''} [{r['segment']}]" for r in Gr[t]) + "\n")
+            fh.write("- pred:   " + "; ".join(f"{r['item_id'] or r['category']} {r['amount'] or ''} {r['exception'] or ''}" for r in P.get(t, [])) + "\n\n")
+    print(f"{len(fails)} fallos -> {path}")
+
+
+if __name__ == "__main__":
+    main()
