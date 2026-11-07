@@ -1,40 +1,82 @@
-# Scoreboard
+# Scoreboard — Envíos Efectivos (LIVE)
 
-| fecha-hora | quién | cambio | sample | val (2025-01..06) | LIVE (plataforma) |
-|---|---|---|---:|---:|---:|
-| 2026-11-07 10:35 | P1 | esqueleto (solo fallback: abono→UNIDENTIFIED, cargo→BANK_FEES) | 2.80 | 2.29 | — |
-| 2026-11-07 10:35 | P1 | starter oficial `out/live/starter.csv.gz` (validado, 33.577 casados) | — | — | pendiente (P4) |
-| 2026-11-07 | P4 | categorías conservadoras + router orientativo + QA + preparación manual; sample visto en desarrollo | 3.25 | no disponible: TRAIN vacío | no enviado: LIVE vacío |
-| 2026-11-07 11:06 | P1 | medición equipo en 707fc7c (nonitem + router + docs_dd) | 18.98 | 17.00 (P 0.998 R 0.132) | — |
-| 2026-11-07 11:35 | P1 | refs + parties + ledger FIFO + text_ref + amount_match (1:1 importe exacto) | 39.31 | 38.30 (P 0.997 R 0.249) | — |
-| 2026-11-07 | P4 | auditoría 2023/2024 sin cambiar reglas; val completo + comprobación de ids conocidos | — | 38.29 (P 0.9969 R 0.2492) | sin envío confirmado |
-| 2026-11-07 12:10 | P1 | text_ref.by_ref: referencia + tercero sin importe exacto (+ exceptions P3) | — | 44.35 (P 0.988 R 0.276) | — |
-| 2026-11-07 11:48 | P1 | envío LIVE `envio_live_1148_09b5ddf.csv.gz` (main 09b5ddf; val 60.04) | — | 60.04 | **59.67** |
-| 2026-11-07 12:20 | P1 | ranker LightGBM (último de la cascada, entrena con < ctx.start) | — | 61.23 (P 0.995 R 0.456) | — |
-| 2026-11-07 12:00 | P1 | anuladas fuera (§5.7), sustitutas por alias, N43 cortado, prefijos estrictos, ref de otra factura bloquea amount_match | — | 62.04 (P 0.995 R 0.460) | — |
-| 2026-11-07 12:08 | P1 | main c4f389b completo (incluye exceptions_amounts de P3); fichero `out/live/envio_live_1201_c4f389b.csv.gz` | — | 63.39 (P 0.995 R 0.464) | **62.79** |
-| 2026-11-07 11:46 | P4 | medición tras merge fd7f56d (docs_ap + amount_match FX) | 55.26 | 59.68 (P 0.9956 R 0.4472; excF1 0.283) | — |
-| 2026-11-07 12:08 | P4 | nonitem: patrones auditados 2023/24 (cash pool por maestro, préstamos, divisa, impuestos, seguros, TGSS); cascada estándar, base fd7f56d (anterior a 63.39 de P1) | 55.36 | 59.90 (P 0.9956 R 0.4472; txnAcc 0.7789; excF1 0.283) | — |
-| 2026-11-07 12:00 | P4 | + `nonitem_unmatched` al final de la cascada, base fd7f56d (`scripts/p4_run.py`; falta registrarlo, P1) | — | 60.36 (txnAcc 0.7764; excF1 0.311; UNIDENTIFIED F1 0.19→0.47) | no enviado; LIVE válido, 392.949 filas, 2 min 28 s |
-| 2026-11-07 12:28 | P4 | fichero LIVE `out/live/envio_live_1228_e7c2b23_p4.csv.gz` (main e7c2b23 + `nonitem_unmatched`, `scripts/p4_run.py --phase live`); VALIDO con comprobación de item_id; 203.083 movimientos, 411.137 filas, 4,2 MB; 5 min 05 s; SHA-256 `7e002779b1c7e7bef9fec615e111da57fc04ee1488034d4dc583c6c8685f5e2e` | — | pendiente (medición en curso) | pendiente (envío manual) |
-| 2026-11-07 12:35 | P1 | fallback: UNIDENTIFIED sin excepción si cliente reconocido o lote; guarda OVERPAYMENT (efectivo > 1,35×saldo) | — | 63.76 (excF1 0.398; UNIDENTIFIED F1 0.28→0.44, OVERPAYMENT P 0.03→0.11) | — |
-| 2026-11-07 12:50 | P1 | registry: + nonitem_unmatched (P4) al final, sobre main d145a0d | — | 65.87 (P 0.995 R 0.493; excF1 0.410; UNIDENTIFIED F1 0.55) | — |
-| 2026-11-07 12:24 | P1 | envío LIVE `envio_live_1224_2b8c623.csv.gz` (val 65.87) | — | 65.87 | **65.09** |
-| 2026-11-07 12:45 | P1 | amount_match.duplicate: DUPLICATE_PAYMENT (mismo tercero, mismo importe, partida cerrada ≤ 60 días) | — | 67.70 (excF1 0.495) | — |
-| 2026-11-07 12:40 | P4 | fichero LIVE `out/live/envio_live_1240_572e36e.csv.gz` (merge dc21ea5 = código de main 572e36e, `scripts/run_phase.py --phase live`; smoke verde); VALIDO con comprobación de item_id; 203.083 movimientos, 411.137 filas, 4,2 MB; 3 min 49 s; SHA-256 `64e2a06c4b25019235ab0e38871f1c40ca81e2a5ef5d8ab13519e778f2ce5515` | 63.82 | 67.70 (medido por P1 en 572e36e) | pendiente (envío manual) |
-| 2026-11-07 12:50 | P1 | DUPLICATE_PAYMENT desactivado (val 67.70 pero LIVE 64.93 < 65.09: no generaliza) + guarda OVERPAYMENT 1,11 | — | 66.32 (OVERPAYMENT F1 0.18→0.40) | pendiente |
+> Pesos del juez: **Allocation F1 50 %** · **Transaction accuracy 30 %** · **Exception macro-F1 20 %**. La 4.ª métrica ("Exactitud ponderada por importe") es informativa, no puntúa.
 
-Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
-DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe
-exacto (967 difieren). Sin filtro sobran 237 k partidas cerradas fuera de banco (pre-2021-07, anuladas+abono,
-restos): `ledger.open_at` solo conserva las que siguen vivas después del corte.
+## 1. Resumen de Envíos Efectivos al Juez
 
+| # | Fecha-Hora | Autor | Commit / Archivo | Cambios acumulados en el envío | Val Local (2025-01..06) | LIVE Total (/100) | Allocation F1 (50 %)<br>`Total (P / R)` | Transaction Accuracy (30 %) | Exception Macro-F1 (20 %) | Exactitud ponderada por importe | Volumen<br>`Movs / Filas / Sin resp.` |
+| -: | ---------------- | -- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------: | --------: | ----------------------------------------- | -------: | -------: | -------: | ----------------------------------- |
+| 0 | 2026-11-07 10:04 | P1 | `prepared_20261107T100427771974Z_34942b0cce96.csv.gz` | Envío base (solo `nonitem`) | — | **2.84** | `0,0 %`<br>*(P `0,0 %` / R `0,0 %`)* | `9,0 %` | `0,7 %` | `49,2 %` | `203.083` / `203.083` / `0` |
+| 1 | 2026-11-07 11:48 | P1 | `09b5ddf`<br>`envio_live_1148_09b5ddf.csv.gz` | Base `nonitem` + `router` + `docs_dd` + `docs_ap` + `refs` + `parties` + `ledger` FIFO + `text_ref` + `amount_match` (1:1 y FX) | 60.04<br>*(P 99.6% · R 44.7% · excF1 28.3%)* | **59.67** | `61,2 %`<br>*(P `99,6 %` / R `44,2 %`)* | `77,7 %` | `28,8 %` | `63,4 %` | `203.083` / `392.949` / `0` |
+| 2 | 2026-11-07 12:01 | P1 | `c4f389b`<br>`envio_live_1201_c4f389b.csv.gz` | + `text_ref.by_ref` (ref+tercero sin importe exacto) + `exceptions_amounts` (P3) + ranker LightGBM + anuladas fuera (§5.7), sustitutas por alias, N43 cortado, prefijos estrictos, bloqueo por ref de otra factura | 63.39<br>*(P 99.5% · R 46.4%)* | **62.79** | `62,3 %`<br>*(P `99,5 %` / R `45,4 %`)* | `80,9 %` | `36,8 %` | `63,8 %` | `203.083` / `393.292` / `0` |
+| 3 | 2026-11-07 12:24 | P1 | `2b8c623` (`d145a0d`)<br>`envio_live_1224_2b8c623.csv.gz` | + fallback `UNIDENTIFIED` sin excepción (cliente reconocido o lote) + guarda `OVERPAYMENT` (> 1,35×saldo) + `nonitem_unmatched` (P4) al final de la cascada | 65.87<br>*(P 99.5% · R 49.3% · excF1 41.0% · UNID F1 55.0%)* | **65.09** 🏆 | `64,7 %`<br>*(P `99,5 %` / R `47,9 %`)* | `82,0 %` | `40,7 %` | `80,4 %` | `203.083` / `411.137` / `0` |
+| 4 | 2026-11-07 12:28 | — | `e7c2b23`<br>`envio_live_1228_e7c2b23_p4.csv.gz` | *(pendiente de documentar)* | — | **64.93** ▼0.16 | `64,7 %`<br>*(P `99,5 %` / R `47,9 %`)* | `81,8 %` | `40,3 %` | `80,4 %` | `203.083` / `411.137` / `0` |
 
-P4: baseline local sample 2.80 → 3.25; smoke verde y siete pruebas de regresión pasan.
-El sample se utilizó para desarrollo, no es holdout. Se retiraron reglas ambiguas aunque redujeran la nota sample.
-Estado actualizado: TRAIN/LIVE disponibles y ruta local configurada. Las referencias anteriores a datos vacíos describen el estado inicial. Los ficheros LIVE preparados siguen sin envío confirmado.
-Detalle y estrategia de evaluación sin fuga: `reports/P4_QA.md`.
+---
 
-- 2026-11-07T10:04:27.771974+00:00 · P4 · LIVE PREPARADO, NO ENVIADO: `out/live/prepared_20261107T100427771974Z_34942b0cce96.csv.gz` · SHA-256 `34942b0cce969d3cc222b765832c55f8d453f5ad5ed34563b2fad4e72645088e` · 203083 movimientos. Nota pendiente de envío manual.
+## 2. Matriz Comparativa por Segmento (LIVE)
 
-- 2026-11-07T10:13:27.597934+00:00 · P4 · LIVE PREPARADO, NO ENVIADO: `out/live/prepared_20261107T101327597934Z_aad15d82163d.csv.gz` · SHA-256 `aad15d82163d71fcd2786ac2e13a3c90c604951ccc635eaf8631ed4d9920f944` · 203083 movimientos. Nota pendiente de envío manual.
+> **Nota**: segmentos y movimientos tal como los muestra el juez (`203.083` movimientos totales). Valor = `Exactitud` por segmento. `n/v` = fila tapada por la barra de navegación en la captura. `Δ 4–3` = Envío #4 menos Envío #3 (solo cambios).
+
+|  # | Segmento | Movimientos | Base *(2.84)* | #1 *(59.67)* | #2 *(62.79)* | #3 *(65.09)* | #4 *(64.93)* | Δ 4–3 |
+| -: | ---------------------------- | ------: | ------: | ------: | ------: | ------: | ------: | ----: |
+|  1 | `ar_ref_noise` | ~42.000 | 0,0 % | 73,1 % | 73,2 % | 73,2 % | 73,2 % | |
+|  2 | `ap_payment_multi` | ~25.000 | 0,0 % | 97,9 % | 98,2 % | 98,2 % | 98,2 % | |
+|  3 | `ar_1to1` | ~19.000 | 0,0 % | 99,7 % | 99,7 % | 99,7 % | 99,7 % | |
+|  4 | `ap_payment_single` | ~18.000 | 0,0 % | 99,5 % | 99,6 % | 99,6 % | 99,6 % | |
+|  5 | `nonitem_bank_fees` | ~6.700 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | |
+|  6 | `ar_1toN_text` | ~6.500 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+|  7 | `ar_same_amount_fifo` | ~6.400 | 0,0 % | 96,2 % | 96,3 % | 96,3 % | 96,3 % | |
+|  8 | `ap_direct_debit` | ~5.600 | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | |
+|  9 | `ar_short_discount` | ~5.500 | 0,0 % | 50,3 % | 90,1 % | 90,1 % | 90,1 % | |
+| 10 | `ap_paid_by_holding` | ~4.800 | 0,0 % | 99,2 % | 99,4 % | 99,4 % | 99,4 % | |
+| 11 | `ar_instalment` | ~4.700 | 0,0 % | 76,4 % | 79,3 % | 81,3 % | 75,3 % | **−6,0** |
+| 12 | `ar_same_amount_month` | ~4.400 | 0,0 % | 99,8 % | 99,9 % | 99,9 % | 99,9 % | |
+| 13 | `ar_partial` | ~3.900 | 0,0 % | 74,8 % | 76,5 % | 77,5 % | 76,4 % | −1,1 |
+| 14 | `ar_dd_returned` | ~3.500 | 0,0 % | 95,7 % | 95,7 % | 95,7 % | 95,7 % | |
+| 15 | `ar_1toN_credit_note` | ~3.300 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+| 16 | `nonitem_bank_fees_intl` | ~3.300 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | |
+| 17 | `ap_credit_note_netted` | ~2.700 | 0,0 % | 97,8 % | 98,1 % | 98,1 % | 98,1 % | |
+| 18 | `ap_partial` | ~2.700 | 0,0 % | 75,3 % | 75,7 % | 75,7 % | 75,7 % | |
+| 19 | `ap_supplier_refund` | ~2.600 | 0,0 % | 0,0 % | 98,9 % | 98,9 % | 98,9 % | |
+| 20 | `ar_cheque_deposit` | ~2.000 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+| 21 | `ar_n_to_m` | ~1.800 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+| 22 | `ar_dd_batch` | ~1.600 | 0,0 % | 94,4 % | 94,5 % | 94,3 % | 94,5 % | +0,2 |
+| 23 | `nonitem_cash_pool` | ~1.600 | 25,5 % | 25,5 % | 25,5 % | 100,0 % | 100,0 % | |
+| 24 | `ap_factored` | ~1.400 | 0,0 % | 95,1 % | 95,3 % | 95,3 % | 95,3 % | |
+| 25 | `ar_short_withholding` | ~1.400 | 0,0 % | 36,2 % | 84,4 % | 84,3 % | 84,4 % | +0,1 |
+| 26 | `ap_fx` | ~1.300 | 0,0 % | 70,8 % | 70,9 % | 70,9 % | 70,9 % | |
+| 27 | `ar_card_settlement` | ~1.300 | 0,0 % | 0,0 % | 0,0 % | 100,0 % | 100,0 % | |
+| 28 | `ar_dispute_settlement` | ~1.300 | 0,0 % | 33,4 % | 33,4 % | 33,4 % | 33,4 % | |
+| 29 | `ar_1toN_remittance` | ~1.200 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+| 30 | `ar_short_dispute` | ~1.100 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+| 31 | `ar_retention` | ~1.000 | 0,0 % | 43,7 % | 56,3 % | 58,6 % | 57,7 % | −0,9 |
+| 32 | `ar_dd_represented_transfer` | ~980 | 0,0 % | 94,6 % | 94,8 % | 94,8 % | 94,7 % | −0,1 |
+| 33 | `ap_confirming` | ~850 | 0,0 % | 80,1 % | 80,1 % | 80,1 % | 80,1 % | |
+| 34 | `ar_discount_late` | ~830 | 0,0 % | 31,3 % | 53,1 % | 53,1 % | 53,1 % | |
+| 35 | `ar_fx` | ~760 | 0,0 % | 24,3 % | 24,9 % | 25,7 % | 25,1 % | −0,6 |
+| 36 | `ar_retention_release` | ~720 | 0,0 % | 99,4 % | 99,3 % | 99,3 % | 99,3 % | |
+| 37 | `ar_third_party_confirming` | ~690 | 0,0 % | 92,5 % | 99,4 % | 99,4 % | 99,6 % | +0,2 |
+| 38 | `ar_duplicate_payment` | ~590 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+| 39 | `customer_refund` | ~390 | 95,6 % | 95,6 % | 95,6 % | 95,6 % | 95,6 % | |
+| 40 | `nonitem_intercompany` | ~380 | 96,5 % | 96,5 % | 96,5 % | 100,0 % | 100,0 % | |
+| 41 | `ar_third_party_agency` | ~350 | 0,0 % | 63,6 % | 65,6 % | 65,6 % | 65,6 % | |
+| 42 | `ar_overpayment` | ~340 | 0,0 % | 46,0 % | 55,1 % | 55,1 % | 57,5 % | **+2,4** |
+| 43 | `nonitem_bank_reversal` | ~330 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | |
+| 44 | `ar_new_iban` | ~290 | 0,0 % | 70,3 % | 70,3 % | 70,3 % | 70,3 % | |
+| 45 | `customer_advance` | ~280 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | |
+| 46 | `ar_advance_deduction` | ~260 | 0,0 % | 57,0 % | 59,7 % | 61,6 % | 42,2 % | **−19,4** |
+| 47 | `ar_replaced_invoice` | ~260 | 0,0 % | 59,9 % | 77,8 % | 77,8 % | 76,7 % | −1,1 |
+| 48 | `nonitem_fx_deal` | ~210 | 62,7 % | 62,7 % | 62,7 % | 100,0 % | 100,0 % | |
+| 49 | `ar_third_party_parent` | ~190 | 0,0 % | 16,0 % | 16,0 % | 16,0 % | 16,0 % | |
+| 50 | `ap_returned_transfer` | ~170 | n/v | n/v | 93,7 % | 93,7 % | 93,7 % | |
+| 51 | `ar_short_bank_charges` | ~150 | 0,0 % | n/v | 70,1 % | 72,1 % | 69,4 % | −2,7 |
+| 52 | `nonitem_card_expenses` | ~97 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | |
+| 53 | `ar_cheque_returned` | ~72 | 0,0 % | 0,0 % | 0,0 % | n/v | 0,0 % | |
+| 54 | `ap_duplicate_payment` | ~70 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | n/v | |
+| 55 | `ap_duplicate_refund` | ~67 | 34,3 % | 34,3 % | 34,3 % | 34,3 % | 34,3 % | |
+| 56 | `ar_credit_note_paid_out` | ~43 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+| 57 | `nonitem_insurance` | ~32 | 81,2 % | 81,2 % | 81,2 % | 100,0 % | 100,0 % | |
+| 58 | `ar_card_chargeback` | ~31 | 0,0 % | 0,0 % | 0,0 % | 0,0 % | 0,0 % | |
+| 59 | `nonitem_interest_expense` | ~28 | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | |
+| 60 | `ar_1to1_remittance` | ~5 | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | |
