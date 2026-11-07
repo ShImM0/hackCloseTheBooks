@@ -97,3 +97,36 @@ Coste: los parciales con tercero ≥ 70 daban falsos positivos en `unidentified`
   estructural; `orig_amount` es la suma exacta del subconjunto en el 74 %, pero con >60 candidatas la suma no lo
   identifica. Solo el aviso de remesa lo lista → `docs_remit` (P2). Mismo origen para SHORT_DISPUTE.
 - ap_fx se resuelve en `docs_ap` (acierto 0,69); sus fallos son parciales con tipo de cambio desconocido.
+
+## ar_1toN_credit_note: ventana FIFO neta de abonos (propuesta para P2, sample 2025-06)
+
+Análisis offline con `scripts/p3_window_sim.py <segmento>` (lee golden; solo análisis).
+
+**Hechos (199 cobros, 2.459 pares):**
+- Importe del cobro = Σ facturas − Σ abonos, exacto en 199 de 199.
+- 208 de 221 abonos (94 %) tienen `related_document` = una factura del MISMO cobro.
+- En 181 de 199 el cobro es un bloque contiguo de facturas abiertas del cliente por `issue_date` que empieza en la
+  más antigua (FIFO, POLICIES), y cada factura arrastra sus abonos abiertos ligados.
+
+**Regla propuesta:** cliente identificado (IBAN / nombre / referencia citada) → facturas abiertas por (issue_date,
+item_id), cada una neta de sus ARC abiertas con `related_document` = su número → buscar el prefijo (desde la más
+antigua) cuya suma neta = importe exacto. Aceptar solo si es único. O(n), sin subset-sum.
+
+**Simulación:** prefijo único y correcto en 176/199, **0 únicos erróneos**. Ventana libre: 174 ok, 7 ambiguas.
+`ar_1toN_text`: 335/349 ok, 0 erróneos. `ar_n_to_m` y `ar_short_dispute`: ninguna ventana (no hay falsos).
+
+**Qué gana en sample (resolver actual de esos cobros):**
+- `nonitem_unmatched` (hoy UNIDENTIFIED): 14 de 22 cobros con ventana única → ~350 pares.
+- `subset_sum`: 46 cobros (519 pares) con ventana única; hoy subset_sum acierta 526/614 pares del segmento →
+  ponerla antes de subset_sum sube su precisión.
+- Sin ventana (8 cobros, 470 pares): los grandes (120/111/95 facturas) tienen huecos; no forzar.
+
+Cobros sin casar con ventana única: BT-2025-0163008, -0198001, -0163394, -0190417, -0184576, -0191209, -0198364,
+-0183690, -0198422, -0163413, -0188425, -0162991, -0172515, -0181627.
+Sin ventana: BT-2025-0190528, -0191289, -0190384, -0190524, -0183681, -0191187, -0173209, -0173205.
+
+**Riesgos / antes de subir:**
+- La simulación conoce el cliente por el golden y excluye lo cobrado por otros movimientos; en producción eso lo dan
+  `parties` y el ledger. Confirmar en val y en 2023/2024 (CLAUDE.md, anti-overfitting).
+- Lookalikes (`unidentified_lookalike`): exigir ≥ 2 partidas en la ventana y tercero identificado; nunca ventana de 1.
+- En sample el saldo inicial es el total (`phase.py:120`): medir en val, no en sample.
