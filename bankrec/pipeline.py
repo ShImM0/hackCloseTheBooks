@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import re
 import gzip
+import io
 import logging
 import time
 from collections import defaultdict
@@ -137,7 +138,8 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
 
     out = config.out_dir(phase_name)
     sub = out / "submission.csv.gz"
-    with gzip.open(sub, "wt", encoding="utf-8", newline="") as fh:
+    # mtime=0: mismo contenido -> mismos bytes (el SHA-256 del respaldo de P4 debe coincidir)
+    with io.TextIOWrapper(gzip.GzipFile(sub, "wb", mtime=0), encoding="utf-8", newline="") as fh:
         w = csv.writer(fh, lineterminator="\n")
         w.writerow(config.HEADER)
         w.writerows(rows)
