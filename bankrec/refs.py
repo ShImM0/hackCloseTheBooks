@@ -34,6 +34,11 @@ def haystack(txn: dict) -> str:
     return unidecode(" ".join(p for p in parts if p)).upper()
 
 
+def joined(hay: str) -> str:
+    """N43 parte el concepto cada 38 caracteres (' | '): 'NOVIEMBR | E' -> 'NOVIEMBRE'. Se añade al original."""
+    return hay + " " + hay.replace(" | ", "") if " | " in hay else hay
+
+
 def ibans(txn: dict) -> set[str]:
     out = set(_IBAN.findall(haystack(txn)))
     if txn.get("counterparty_account"):
@@ -64,8 +69,8 @@ def ref_score(doc_number: str | None, toks: list[str]) -> int:
             return 100
         if len(t) >= 5 and d.endswith(t):
             best = max(best, 90)
-        elif len(t) >= 5 and d.startswith(t):
-            best = max(best, 85)
+        elif len(t) >= 5 and d.startswith(t) and not any(len(u) > len(t) and u.startswith(t) for u in toks):
+            best = max(best, 85)   # prefijo = número cortado; si hay un token más largo con ese inicio, manda ese
         elif len(t) >= 7 and abs(len(t) - len(d)) <= 1 and Levenshtein.distance(t, d, weights=(1, 1, 1)) <= 2:
             best = max(best, 75)
     return best
@@ -102,4 +107,6 @@ if __name__ == "__main__":
     assert ref_score("INV25-0101240", tokens("INVOICE INV25-1001240")) == 75
     assert ref_score("FV24-0310926", tokens("FRA 999999")) == 0
     assert months("SERVICE APRIL 2024") == {4} and months("MANT. MAR 24") == {3}
+    assert 11 in months(joined("CUOTA MANTENIMIENTO NOVIEMBR | E 24"))
+    assert ref_score("FV25-0107998", tokens("FACTURA FV25-0101272 FRA FV25-010")) == 0
     print("refs OK")

@@ -180,13 +180,21 @@ def _plan(f: dict) -> list[tuple[int, bool, bool]]:
     return out
 
 
-def _fact_label(f: dict, amount: int, open_c: int, tol: int) -> str | None:
+def _fact_label(f: dict, amount: int, open_c: int, tol: int, age: int | None = None) -> str | None:
     """Excepción ("PARTIAL" o "") de un cobro de `amount` según el PDF; None si no coincide con ningún cobro documentado."""
     best = min(_plan(f), key=lambda p: (abs(p[0] - amount), p[1]), default=None)
     if best is None or abs(best[0] - amount) > tol:
         return None
     _, last, equal = best
-    return "" if last or (equal and abs(open_c - amount) <= tol) else "PARTIAL"
+    if last:
+        return ""
+    if equal and "instalment_plan" in f:
+        # plazos iguales: no hay "último" por importe. Sin excepción el que cierra el saldo o el que llega tras el
+        # último vencimiento (TRAIN: 95,7 % de acierto; el orden de pago real se desvía en un 5 %)
+        d_last = int(f["instalment_plan"].split("|")[1].split("/")[-1])
+        if abs(open_c - amount) <= tol or (age is not None and age >= d_last):
+            return ""
+    return "PARTIAL"
 
 
 # ----------------------------------------------------------------------------------------------- núcleo
@@ -212,7 +220,7 @@ def finalize(prop: Proposal, txn: dict, ctx, ledger) -> Proposal | None:
     locked = any(a.exception and a.exception != "FX_DIFFERENCE" for a, _, _ in rows)
 
     if locked and not any(not a.exception for a, _, _ in rows):
-        out = [Alloc(a.item_id, a.amount_cents, a.exception) for a, _, _ in rows]
+        out = [Alloc(a.item_id, abs(a.amount_cents), a.exception) for a, _, _ in rows]   # RETURNED llega con signo −
     elif locked:
         # el resolver fijó algunas filas (p. ej. SHORT_DISPUTE de un aviso): se conservan y las libres se explican
         # con el efectivo que queda (retención en origen, pronto pago...)
@@ -221,11 +229,11 @@ def finalize(prop: Proposal, txn: dict, ctx, ledger) -> Proposal | None:
         offset = 0
         for i in fixed:
             a, info, _ = rows[i]
-            offset += a.amount_cents if info[0] in INVOICES else -a.amount_cents
+            offset += abs(a.amount_cents) if info[0] in INVOICES else -abs(a.amount_cents)
         sub = _free_rows([rows[i] for i in free], txn, st, fx, tcur, icur, offset, ar)
         out = [None] * len(rows)
         for i in fixed:
-            out[i] = Alloc(rows[i][0].item_id, rows[i][0].amount_cents, rows[i][0].exception)
+            out[i] = Alloc(rows[i][0].item_id, abs(rows[i][0].amount_cents), rows[i][0].exception)
         for i, o in zip(free, sub):
             out[i] = o
     elif not inv_idx:
@@ -285,6 +293,11 @@ def _returned(rows, txn, st, fx):
     return out
 
 
+def _age(row, date) -> int | None:
+    issue = row[1][2]
+    return (date - issue).days if issue is not None else None
+
+
 def _explain_explicit(row, open_c, amt, date, st, tol) -> Alloc:
     """Fila con importe explícito del resolver menor que el saldo: ¿pronto pago, retención en origen, plazo del PDF o
     parcial? Devuelve el Alloc con su excepción e importe (completo si la partida queda liquidada)."""
@@ -302,11 +315,11 @@ def _explain_explicit(row, open_c, amt, date, st, tol) -> Alloc:
         for bps in r:
             if abs(amt - (total - (total * bps + 5000) // 10000)) <= 2:
                 f = st.item_facts(a.item_id)
-                if f and _fact_label(f, amt, open_c, tol) is not None:
+                if f and _fact_label(f, amt, open_c, tol, _age(row, date)) is not None:
                     break
                 return Alloc(a.item_id, open_c, "SHORT_WITHHOLDING")
     f = st.item_facts(a.item_id)
-    lbl = _fact_label(f, amt, open_c, tol) if f else None
+    lbl = _fact_label(f, amt, open_c, tol, _age(row, date)) if f else None
     return Alloc(a.item_id, amt, "PARTIAL" if lbl is None else lbl)
 
 
@@ -362,7 +375,7 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
         # liquidación total: el PDF puede marcarla PARTIAL (retención/anticipo/plazo cobrados fuera de orden)
         for i in live:
             f = st.item_facts(rows[i][0].item_id)
-            if f and _fact_label(f, opens[i], opens[i], tol) == "PARTIAL":
+            if f and _fact_label(f, opens[i], opens[i], tol, _age(rows[i], date)) == "PARTIAL":
                 out[i] = Alloc(rows[i][0].item_id, opens[i], "PARTIAL")
         return out
     if delta < 0:
@@ -376,7 +389,7 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
         f = st.item_facts(rows[i][0].item_id)
         if f and opens[i] > 0:
             applied = opens[i] - delta
-            lbl = _fact_label(f, applied, opens[i], tol)
+            lbl = _fact_label(f, applied, opens[i], tol, _age(rows[i], date))
             if lbl is not None and applied < opens[i] - tol:
                 out[i] = Alloc(rows[i][0].item_id, applied, lbl)
                 return out
@@ -415,7 +428,7 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
                 else:
                     out[i] = Alloc(rows[i][0].item_id, opens[i] - dvals[k], "PARTIAL")
             return out
-    # 3. retención en origen (MX/BR/MA)
+    # 3. retención en origen (MX/BR/MA): todas las facturas libres del movimiento
     for rate_idx in (0, 1):
         cand, wvals = [], []
         for i in live:
@@ -425,10 +438,10 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
                 cand.append(i)
                 wvals.append((total * r[rate_idx] + 5000) // 10000)
         if cand:
-            sub = list(range(len(cand))) if abs(sum(wvals) - delta) <= tol else _subset_sum(wvals, delta, 3)
-            if sub:
-                for k in sub:
-                    out[cand[k]] = Alloc(rows[cand[k]][0].item_id, opens[cand[k]], "SHORT_WITHHOLDING")
+            # en TRAIN todas las facturas del movimiento llevan la retención (salvo las en disputa); abonos vacíos
+            if abs(sum(wvals) - delta) <= tol:
+                for i in cand:
+                    out[i] = Alloc(rows[i][0].item_id, opens[i], "SHORT_WITHHOLDING")
                 return out
     # 4. gastos bancarios del banco intermediario: una sola factura, ≤ 60 EUR y ≤ 2 %
     if len(live) == 1 and not live_cn:

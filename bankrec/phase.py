@@ -23,6 +23,7 @@ log = logging.getLogger("bankrec")
 
 ITEM_COLS = ["item_id", "item_type", "entity", "party_id", "party_name", "document_number", "issue_date", "due_date",
              "currency", "total_cents", "payment_terms", "po", "payment_method", "related_document", "reason"]
+CANCEL_REASON = "Anulación de factura"
 CLOSED_DAYS = 240   # ventana de partidas cerradas que se mantienen en ctx.items (open_cents=0)
 
 
@@ -125,5 +126,12 @@ def build(name: str, months: int | None = None) -> Phase:
     if name not in ("sample", "val"):
         golden = None
     items = items.unique("item_id", keep="first")
+    # POLICIES §5.7: la factura anulada y su abono de anulación nunca se liquidan por banco
+    canc = items.filter((pl.col("item_type") == "ARC") & (pl.col("reason") == CANCEL_REASON))
+    canc_inv = canc.select("entity", pl.col("related_document").alias("document_number")).unique()
+    drop = (items.filter(pl.col("item_type") == "ARI").join(canc_inv, on=["entity", "document_number"])["item_id"]
+            .append(canc["item_id"]))
+    items = items.filter(~pl.col("item_id").is_in(drop.implode()))
+    log.info("fuera %d partidas anuladas (factura + abono de anulación)", drop.len())
     log.info("fase %s: %d movimientos, %d partidas (%s..%s)", name, txns.height, items.height, start, end)
     return Phase(name, folder, config.folder_dir(folder), start, end, txns, items, golden)

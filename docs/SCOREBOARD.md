@@ -9,9 +9,13 @@
 | 2026-11-07 11:35 | P1 | refs + parties + ledger FIFO + text_ref + amount_match (1:1 importe exacto) | 39.31 | 38.30 (P 0.997 R 0.249) | — |
 | 2026-11-07 | P4 | auditoría 2023/2024 sin cambiar reglas; val completo + comprobación de ids conocidos | — | 38.29 (P 0.9969 R 0.2492) | sin envío confirmado |
 | 2026-11-07 12:10 | P1 | text_ref.by_ref: referencia + tercero sin importe exacto (+ exceptions P3) | — | 44.35 (P 0.988 R 0.276) | — |
+| 2026-11-07 11:48 | P1 | envío LIVE `envio_live_1148_09b5ddf.csv.gz` (main 09b5ddf; val 60.04) | — | 60.04 | **59.67** |
+| 2026-11-07 12:20 | P1 | ranker LightGBM (último de la cascada, entrena con < ctx.start) | — | 61.23 (P 0.995 R 0.456) | — |
+| 2026-11-07 12:00 | P1 | anuladas fuera (§5.7), sustitutas por alias, N43 cortado, prefijos estrictos, ref de otra factura bloquea amount_match | — | 62.04 (P 0.995 R 0.460) | — |
+| 2026-11-07 12:08 | P1 | main c4f389b completo (incluye exceptions_amounts de P3); fichero `out/live/envio_live_1201_c4f389b.csv.gz` | — | 63.39 (P 0.995 R 0.464) | pendiente |
 | 2026-11-07 12:40 | P4 | medición tras merge fd7f56d (docs_ap + amount_match FX) | 55.26 | 59.68 (P 0.9956 R 0.4472; excF1 0.283) | — |
-| 2026-11-07 13:10 | P4 | nonitem: patrones auditados 2023/24 (cash pool por maestro, préstamos, divisa, impuestos, seguros, TGSS); cascada estándar | 55.36 | 59.90 (P 0.9956 R 0.4472; txnAcc 0.7789; excF1 0.283) | — |
-| 2026-11-07 13:10 | P4 | + `nonitem_unmatched` al final de la cascada (`scripts/p4_run.py`; falta registrarlo, P1) | — | 60.36 (txnAcc 0.7764; excF1 0.311; UNIDENTIFIED F1 0.19→0.47) | no enviado; LIVE válido, 392.949 filas, 2 min 28 s |
+| 2026-11-07 13:10 | P4 | nonitem: patrones auditados 2023/24 (cash pool por maestro, préstamos, divisa, impuestos, seguros, TGSS); cascada estándar, base fd7f56d (anterior a 63.39 de P1) | 55.36 | 59.90 (P 0.9956 R 0.4472; txnAcc 0.7789; excF1 0.283) | — |
+| 2026-11-07 13:10 | P4 | + `nonitem_unmatched` al final de la cascada, base fd7f56d (`scripts/p4_run.py`; falta registrarlo, P1) | — | 60.36 (txnAcc 0.7764; excF1 0.311; UNIDENTIFIED F1 0.19→0.47) | no enviado; LIVE válido, 392.949 filas, 2 min 28 s |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe

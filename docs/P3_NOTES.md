@@ -42,10 +42,38 @@ cobros con >16 facturas (subconjunto no identificable por suma). Eso depende de 
 
 - Descuento: dentro de plazo en TRAIN llega hasta **plazo + 9 días** (no +3) en cobros de varias facturas; en cobros
   de una factura el corte es exacto (≤ plazo → SHORT_DISCOUNT, ≥ plazo+10 → PARTIAL por total − descuento).
-- Retención en origen: MX 1,25 % o 10 %; BR y MA 1,5 % o 10 % del total de la factura.
+- Retención en origen: MX 1,25 % o 10 %; BR y MA 1,5 % o 10 % del total de la factura. En un movimiento con retención
+  **todas** las facturas llevan SHORT_WITHHOLDING (salvo las en disputa) y los abonos van vacíos (100 % en val: 4.330 filas).
 - Parciales en AR de varias partidas: fracciones del saldo 0,4/0,5/0,6 (PARTIAL) y 0,7/0,8/0,9/0,95/0,97
   (SHORT_DISPUTE); en AP 0,3/0,5/0,7.
 - Plazos: la excepción vacía va al plazo "último" del plan (el de importe distinto) aunque se cobre antes que otros;
   el cobro del importe a pagar tras retención y el del neto tras anticipo son PARTIAL aunque la liberación ya se cobrase.
-  Con plazos iguales el orden de pago no identifica cuál es el último (≈ 94 % de acierto en `ar_instalment`).
+  Con plazos iguales sin excepción el cobro que cierra el saldo o llega tras el último vencimiento (95,7 % en TRAIN; el
+  orden real de pago se desvía en un 5 %); `ar_instalment` queda en 98,9 % en el arnés.
 - Cobros con partidas en varias divisas (pagos AP desde una cuenta): FX_DIFFERENCE por partida con divisa distinta de la cuenta.
+
+## Idiomas de los PDFs y plantillas
+
+- Las cabeceras cambian por país (RECHNUNG, FACTURE, FATTURA, FATURA, INVOICE, FACTURA) y el texto libre de hechos solo
+  aparece en ES/EN en TRAIN. Los patrones de `pdf_facts` son estructurales y admiten variantes DE/FR/IT/PT/PL (sin
+  verificar: no hay ejemplos). Hay dos plantillas de anulación: "Abono por anulación total de la factura X" y
+  "CANCELLING OF INVOICE Nº X" (esta última, 2.200 abonos que antes no se detectaban).
+- Si LIVE/FINAL traen otra plantilla, el hecho no se detecta: revisar con `uv run python -m bankrec.pdf_facts live`.
+
+## Contrato en el pipeline real (comprobado con los resolvers actuales)
+
+- Los resolvers dan `Alloc(item, |efectivo|)` (efectivo en divisa de la cuenta): `finalize` lo trata como efectivo aplicado.
+- `docs_dd` da RETURNED con importe negativo: `finalize` lo pasa a positivo (antes el pipeline descartaba la fila).
+  `ar_dd_returned` 0 → 0,968 en val.
+
+## ar_short_discount / ar_short_withholding (pedido de P1)
+
+Causa: `amount_match` solo busca partidas con saldo == cobro; un cobro con descuento llega como total − %, así que no
+hay candidata y sale UNIDENTIFIED por el fallback (val completo: acierto 0,000 en 6.317 movimientos; no era `finalize`).
+Arreglo: `bankrec/exceptions_amounts.py` (resolver `short_cash`, de P3) indexa el efectivo esperado con descuento o
+retención y aplica el mismo criterio de tercero que `amount_match`. **P1 debe añadir
+`"bankrec.exceptions_amounts"` a `registry.CASCADE` justo después de `"bankrec.resolvers.amount_match"`.**
+Medido en val completo con la cascada modificada: ar_short_discount 0,000 → 0,907; ar_short_withholding → 0,869;
+ar_discount_late → 0,551; SCORE 54,55 → 58,27; excF1 0,139 → 0,244.
+Lo que queda (590 movimientos de ar_short_discount) son cobros de VARIAS facturas con descuento en una de ellas
+(suma de saldos de un mismo tercero − descuento de una): hace falta un subset-sum por tercero (P2, `subset_sum`/`multi_ref`).

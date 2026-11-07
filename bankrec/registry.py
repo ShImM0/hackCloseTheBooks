@@ -26,6 +26,7 @@ CASCADE = [
     # 1:1
     "bankrec.resolvers.text_ref",
     "bankrec.resolvers.amount_match",
+    "bankrec.exceptions_amounts",   # P3: si aún no existe, registry.load lo omite con aviso
     "bankrec.resolvers.subset_sum",
     "bankrec.resolvers.ranker",
 ]
