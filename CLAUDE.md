@@ -122,16 +122,24 @@ Lo ejecuta P1. P4 hace a la vez lo mismo en su portátil como respaldo: mismo co
 3. Comprobar fechas y volumen:
    `uv run python -c "from bankrec import load; t=load.table('final','bank_transactions'); print(t.height, t['booking_date'].min(), t['booking_date'].max())"`
    Deben ser de 2026-01-01 a 2026-06-30.
+   Maestros de FINAL: deben incluir ZA01 y tipos de cambio de 2026.
+   `uv run python -c "from bankrec import load; c=load.master('customers','final'); f=load.master('fx_rates','final'); print((c['entity']=='ZA01').sum(), f['date'].max())"`
+   Debe dar más de 0 clientes de ZA01 y una fecha de 2026-06. Si no, revisar la ruta `final/masters_final/`.
+   Borrar cachés de ensayos: `_cache/ranker_final_*` y `_cache/pdf_text_final.parquet`, si existen.
 4. **Precalentar los PDFs** (multiproceso): `uv run python -m bankrec.pdf_text final`
+   Si el portátil va justo de memoria, cerrar otros procesos antes: lanza un proceso por núcleo.
 5. **Ejecutar**: `uv run python scripts/run_phase.py --phase final` → `out/final/submission.csv.gz` + `VALIDO`.
    - Tiempo esperado < 6 min. El ranker se reentrena con todo TRAIN.
    - Si un resolver falla, el log lo dice y la cascada sigue. Si algo lo rompe todo, repetir con `--disable <nombre>`.
 6. Revisar el log:
    - número de movimientos por resolver, parecido en proporción a LIVE;
-   - sin «partidas abiertas sin atributos» masivas;
+   - avisos «partidas abiertas sin historial»: normales para ZA01, que toma los atributos del propio fichero;
+     masivos en otras entidades = algo raro;
+   - ningún aviso «FINAL sin final/masters_final/» ni «fx_rates llega solo hasta…»;
    - `fallback` < 1 %.
 7. Preparar el fichero (P4, a mano): `scripts/submit.py out/final/submission.csv.gz --phase final`.
-   Comparar el SHA-256 con el portátil de respaldo y subir **una vez**. Una validación rechazada no gasta el envío.
+   Comparar con el portátil de respaldo el SHA-256 del contenido descomprimido (ver «Ciclo de envíos»).
+   `subset_sum` aún no es 100 % reproducible: si difieren pocas filas, vale el de P1. Subir **una vez**. Una validación rechazada no gasta el envío.
 8. Anotar commit, SHA-256 y hora en `docs/SCOREBOARD.md`.
 
 Drift ya cubierto: `masters_final` se usa fichero a fichero (si falta uno, el del repo); la filial nueva ZA01 entra
