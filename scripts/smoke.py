@@ -5,13 +5,18 @@
 Debe estar en verde antes de cada push a main.
 """
 import logging
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from bankrec import config, pipeline
-from bankrec.validate import phase_txn_ids, validate
+# igual que run_phase.py: semilla de hash fija para que dos ejecuciones den el mismo fichero
+if __name__ == "__main__" and os.environ.get("PYTHONHASHSEED") != "0":
+    sys.exit(subprocess.call([sys.executable, *sys.argv], env={**os.environ, "PYTHONHASHSEED": "0"}))
+
+from bankrec import config, pipeline  # noqa: E402
+from bankrec.validate import phase_txn_ids, validate  # noqa: E402
 
 
 def main():
