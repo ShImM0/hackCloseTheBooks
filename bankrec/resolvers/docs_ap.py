@@ -360,10 +360,26 @@ def prepare(ctx) -> None:
         "bank_txn_id", "account_id", "booking_date", pl.col("amount_cents").alias("amt"),
         pl.concat_str([pl.col("text"), pl.col("ref1"), pl.col("ref2"), pl.col("remittance_info"), pl.col("end_to_end_id")],
                       separator=" ", ignore_nulls=True).alias("txt"))
-    cand = (tr.select("end_to_end_id", "debtor_account_id", "transfer_amount_cents", "execution_date", "beneficiary", "docs")
+    cols = ["end_to_end_id", "debtor_account_id", "transfer_amount_cents", "execution_date", "beneficiary", "docs"]
+    cand = (tr.select(cols)
             .join(credits, left_on=["debtor_account_id", "transfer_amount_cents"], right_on=["account_id", "amt"])
             .with_columns((pl.col("booking_date") - pl.col("execution_date")).dt.total_days().alias("lag"))
             .filter(pl.col("lag").is_between(0, _RETURN_DAYS)))
+    #    transferencia en otra divisa que la cuenta (§3): el abono devuelto llega convertido y sin importe original ->
+    #    importe dentro de ±_FX_BAND del cambio de referencia (mismas reglas de texto: e2e o beneficiario + motivo)
+    acc_cur = dict(ctx.txns.select("account_id", "currency").unique("account_id").iter_rows())
+    trfx = tr.filter(pl.col("rcur").is_not_null() & (pl.col("rcur") != pl.col("debtor_account_id").replace_strict(acc_cur, default=None)))
+    if trfx.height:
+        fx = _Fx(ctx.master("fx_rates"))
+        conv = [fx.convert(a, c, acc_cur[ac], d) if a else float("nan")
+                for a, c, ac, d in trfx.select("transfer_amount_cents", "rcur", "debtor_account_id", "execution_date").iter_rows()]
+        trfx = (trfx.with_columns(pl.Series("conv", conv, dtype=pl.Float64)).filter(pl.col("conv").is_not_nan())
+                .with_columns((pl.col("conv") * (1 - _FX_BAND)).alias("lo"), (pl.col("conv") * (1 + _FX_BAND)).alias("hi")))
+        cfx = (trfx.select(*cols, "lo", "hi").join(credits, left_on="debtor_account_id", right_on="account_id")
+               .with_columns((pl.col("booking_date") - pl.col("execution_date")).dt.total_days().alias("lag"))
+               .filter(pl.col("lag").is_between(0, _RETURN_DAYS) & pl.col("amt").is_between(pl.col("lo"), pl.col("hi")))
+               .drop("lo", "hi", "amt"))
+        cand = pl.concat([cand, cfx.select(cand.columns)], how="vertical_relaxed")
     ret: dict[str, list] = {}
     if cand.height:
         cand = cand.with_columns(
