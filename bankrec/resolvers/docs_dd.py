@@ -26,6 +26,8 @@ log = logging.getLogger("bankrec")
 
 _MANDATE = re.compile(r"\b[A-Z]{3}-[A-Z]{2}-\d{4,}\b")   # mandato: prefijo-país-número (formato general)
 _BATCH = re.compile(r"(?:REM|DEV)\s*(\d{11})")
+_REP_DAYS = dt.timedelta(days=60)   # re-presentación tras la devolución (§5.10)
+_MIN_LAG = 1                        # días mínimos entre el cobro y su devolución (con 3 ya se pierden devoluciones reales)
 
 
 def _receipts(ctx) -> pl.DataFrame:
@@ -56,16 +58,21 @@ def _map_items(rec: pl.DataFrame, ctx) -> pl.DataFrame:
            # cuentas secundarias ("ES01-PENA-EUR-2") no están en el maestro: la entidad es el prefijo del id
            .with_columns(pl.coalesce("acc_entity", pl.col("account_id").str.split("-").list.first()).alias("acc_entity"))
            .with_columns(pl.coalesce("pm", "pi").alias("party_id"),
-                         pl.col("remittance_info").str.extract(r"(\d{4,})\D*$").str.strip_chars_start("0").alias("rdig")))
+                         pl.col("remittance_info").str.extract(r"(\d{4,})\D*$").alias("rraw"))
+           .with_columns(pl.col("rraw").str.strip_chars_start("0").alias("rdig")))
     ari = (ctx.items.filter(pl.col("item_type") == "ARI")
            .select("item_id", "party_id", "entity", "issue_date", "total_cents",
                    pl.col("document_number").str.replace_all(r"\D", "").alias("idig")))
-    # candidatas: mismo tercero; puntuación por número impreso y por importe
-    c = (rec.select("rid", "party_id", "acc_entity", "rdig", "amount_cents")
+    # candidatas: mismo tercero; puntuación por número impreso y por importe.
+    # Número: el último grupo de >= 4 cifras del recibo cierra el nº de la factura, sin ceros a la izquierda
+    # (POLICIES §5.5) o con ellos: "FT25-01-00434" -> "00434" (las series que empiezan cada año tienen < 4 cifras
+    # significativas en enero; sin esto el recibo caía en una factura antigua del mismo importe).
+    c = (rec.select("rid", "party_id", "acc_entity", "rdig", "rraw", "amount_cents")
          .join(ari, on="party_id")
          .with_columns(
-             (pl.col("rdig").is_not_null() & (pl.col("rdig").str.len_chars() >= 4)
-              & pl.col("idig").str.ends_with(pl.col("rdig"))).cast(pl.Int32).alias("s_doc"),
+             ((pl.col("rdig").is_not_null() & (pl.col("rdig").str.len_chars() >= 4)
+               & pl.col("idig").str.ends_with(pl.col("rdig")))
+              | (pl.col("rraw").is_not_null() & pl.col("idig").str.ends_with(pl.col("rraw")))).cast(pl.Int32).alias("s_doc"),
              (pl.col("total_cents") == pl.col("amount_cents")).cast(pl.Int32).alias("s_amt"),
              (pl.col("entity") == pl.col("acc_entity")).fill_null(False).cast(pl.Int32).alias("s_ent"))
          .with_columns((pl.col("s_doc") * 4 + pl.col("s_amt") * 2 + pl.col("s_ent")).alias("score"))
@@ -83,7 +90,7 @@ def _map_items(rec: pl.DataFrame, ctx) -> pl.DataFrame:
               .sort(["rid", "issue_date"]).unique("rid", keep="first")
               .select("rid", "item_id", pl.lit(1, pl.Int32).alias("score")))
         c = pl.concat([c, c2])
-    return rec.join(c, on="rid", how="left").drop("pm", "pi")
+    return rec.join(c, on="rid", how="left").drop("pm", "pi", "rraw")
 
 
 def prepare(ctx) -> None:
@@ -114,12 +121,17 @@ def prepare(ctx) -> None:
         by_batch[b[0]] = list(zip(grp["item_id"].to_list(), grp["amount_cents"].to_list()))
     sh["by_txn"] = {t: by_batch[b] for t, b in pairs.items() if b in by_batch}
 
-    # 2) devoluciones: (mandato, importe) -> [(batch_id, fecha, item_id)]
+    # 2) devoluciones: (mandato, importe) -> [(batch_id, fecha, item_id, re-presentado)];
+    #    partida -> fechas en que se re-presenta (re_presentation=Y, POLICIES §5.10)
     ret: dict[tuple[str, int], list] = {}
-    for m, a, b, d, i in rec.filter(pl.col("mandate_id").is_not_null()).select(
-            "mandate_id", "amount_cents", "batch_id", "collection_date", "item_id").iter_rows():
-        ret.setdefault((m, a), []).append((b, d, i))
+    rep: dict[str, list] = {}
+    for m, a, b, d, i, y in rec.filter(pl.col("mandate_id").is_not_null()).select(
+            "mandate_id", "amount_cents", "batch_id", "collection_date", "item_id", "re_presentation").iter_rows():
+        ret.setdefault((m, a), []).append((b, d, i, y == "Y"))
+        if y == "Y" and i is not None and d is not None:
+            rep.setdefault(i, []).append(d)
     sh["returns"] = ret
+    sh["represented"] = rep
     # respaldo: mandato -> cliente -> facturas por importe (remesas fuera de los ficheros cargados)
     cust = ctx.master("customers").filter(pl.col("sepa_mandate_id").is_not_null())
     sh["mandate_party"] = dict(zip(cust["sepa_mandate_id"].to_list(), cust["customer_id"].to_list()))
@@ -168,10 +180,9 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     cands = sh.get("returns", {}).get((mandate, -amt), [])
     if batch:
         cands = [c for c in cands if c[0] == batch]
-    # el recibo más reciente anterior a la devolución
     prior = [c for c in cands if c[1] is not None and c[1] <= txn["booking_date"] and c[2] is not None]
     if prior:
-        _, _, item = max(prior, key=lambda c: c[1])
+        item = _returned_item(prior, txn["booking_date"], sh.get("represented", {}))
         return Proposal(txn["bank_txn_id"], [Alloc(item, -amt, "RETURNED")], confidence=0.95, resolver=NAME,
                         reason=f"devolución mandato {mandate} (recibo)")
     # respaldo: factura del cliente del mandato con ese importe, emitida antes de la remesa, ya cobrada si es posible
@@ -183,6 +194,20 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     _, item = max(its, key=lambda c: (not ledger.is_open(c[1]), c[0]))
     return Proposal(txn["bank_txn_id"], [Alloc(item, -amt, "RETURNED")], confidence=0.8, resolver=NAME,
                     reason=f"devolución mandato {mandate} (cliente+importe)")
+
+
+def _returned_item(prior: list, booking: dt.date, rep: dict) -> str:
+    """Partida del recibo devuelto entre los recibos anteriores del mismo mandato e importe (cuotas fijas).
+    POLICIES §5.10: el recibo devuelto suele re-presentarse en una remesa posterior (re_presentation=Y):
+    1) si una sola de las partidas candidatas se re-presenta en los _REP_DAYS días siguientes, es esa;
+    2) si no, el recibo más reciente cobrado al menos _MIN_LAG días antes (la devolución no llega el mismo día).
+    Offline con el golden (acierto de partida en ar_dd_returned; antes = el recibo más reciente): 2023-H1 0,965 -> 0,985,
+    2024-H1 0,968 -> 0,986, 2025-H1 0,969 -> 0,987 (igual en todos los semestres 2021-2025; ventana 30/60/90 días igual)."""
+    later = {c[2] for c in prior if any(booking < x <= booking + _REP_DAYS for x in rep.get(c[2], ()))}
+    if len(later) == 1:
+        return later.pop()
+    ok = [c for c in prior if (booking - c[1]).days >= _MIN_LAG] or prior
+    return max(ok, key=lambda c: (c[1], c[0] or "", c[2]))[2]   # desempate fijo: el envío debe ser reproducible
 
 
 def _batch_date(batch: str | None):
