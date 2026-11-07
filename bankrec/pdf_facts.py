@@ -37,16 +37,25 @@ MESES = {"january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 
          "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
          "septiembre": 9, "setiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12}
 
-AMT = r"[\d][\d.,\s ]*\d"            # importe en cualquier formato regional
+AMT = r"[\d][\d.,\s\u00a0]*\d"            # importe en cualquier formato regional
 CUR = r"[A-Z]{3}"
-RE_INSTAL = re.compile(rf"(\d+)\s+(?:instalments|vencimientos)\s+(?:at|a)\s+([\d/]+)\s+(?:days|días)\s*\(([^)]*?)\s*{CUR}\)")
-RE_RETEN = re.compile(rf"(?:Retention|Retención en garantía del)\s+(\d+(?:[.,]\d+)?)\s*%\s*\(({AMT})\s*{CUR}\)"
-                      rf"[^()]*\((\d\d/\d\d/\d{{4}})\)[^:]*:\s*({AMT})\s*{CUR}")
-RE_ADV = re.compile(rf"(?:advance received against proforma|anticipo recibido según proforma)\s+(\S+?)\s*(?::|de)\s*"
-                    rf"({AMT})\s*{CUR}\.\s*(?:Net amount due|Importe neto a pagar)\s*({AMT})")
-RE_REPL = re.compile(r"(?:cancels and replaces invoice|anula y sustituye a la factura)\s+(\S+)", re.I)
-RE_CANCEL = re.compile(r"Abono por anulación total de la factura\s+(\S+?)\.?(?:\s|$)")
-RE_MONTH = re.compile(r"(?:for the month of|correspondiente a)\s+([A-Za-zñÑ]+)\s+(20\d\d)\.")
+# Plantillas vistas en TRAIN: texto libre en ES/EN (las cabeceras sí cambian por país: RECHNUNG, FACTURE, FATTURA...).
+# Los patrones son estructurales (número + palabra + días + importes entre paréntesis) para tolerar otros idiomas;
+# las palabras clave se amplían con las variantes más probables por si LIVE/FINAL traen otra plantilla.
+W_INST = r"(?:instalments|installments|vencimientos|Raten|éch[ée]ances|rate|prestações|prestaciones|rat)"
+W_AT = r"(?:at|a|à|zu|en|em|w)"
+W_DAYS = r"(?:days|días|dias|Tagen|jours|giorni|dni)"
+RE_INSTAL = re.compile(rf"(\d+)\s+{W_INST}\s+{W_AT}\s+([\d/]+)\s+{W_DAYS}\s*\(([^)]*?)\s*{CUR}\)", re.I)
+RE_RETEN = re.compile(rf"(?:Retention|Retención en garantía del|Retenue|Einbehalt|Ritenuta|Retenção)\s+(?:de\s+)?(\d+(?:[.,]\d+)?)\s*%\s*"
+                      rf"\(({AMT})\s*{CUR}\)[^()]*\((\d\d/\d\d/\d{{4}})\)[^:]*:\s*({AMT})\s*{CUR}")
+RE_ADV = re.compile(rf"(?:advance received against proforma|anticipo recibido según proforma|acompte|Anzahlung|acconto|adiantamento)"
+                    rf"[^:]*?\b(P[A-Z]*\d[\w-]*?)\s*(?::|de|of)\s*({AMT})\s*{CUR}\.\s*"
+                    rf"(?:Net amount due|Importe neto a pagar|Net)[^\d]*({AMT})", re.I)
+RE_REPL = re.compile(r"(?:cancels and replaces invoice|anula y sustituye a la factura|annule et remplace|storniert und ersetzt|"
+                     r"annulla e sostituisce|anula e substitui)\s+(?:la facture\s+|die Rechnung\s+|la fattura\s+)?(\S+)", re.I)
+# abonos de anulación: "Abono por anulación total de la factura X." y "CANCELLING OF INVOICE Nº X"
+RE_CANCEL = re.compile(r"(?:Abono por anulación total de la factura|CANCELLING OF INVOICE\s*N[º°o.]?)\s*(\S+?)\.?(?:\s|$)", re.I)
+RE_MONTH = re.compile(r"(?:for the month of|correspondiente a|pour le mois de|für den Monat|per il mese di|referente a)\s+([A-Za-zñÑçéû]+)\s+(20\d\d)\.")
 RE_NOTICE = re.compile(r"(?:from|a partir del)\s+(\d\d/\d\d/\d{4})\s+(.*?)\s*(?:account|cuenta)\s+([A-Z]{2}\d{2}[A-Z0-9]{8,30})"
                        r"\s*,?\s*\(?(?:previously|en sustitución de la anterior)\s+([A-Z]{2}\d{2}[A-Z0-9]{8,30})", re.S)
 RE_PROF = re.compile(rf"(?:Order total|Importe total del pedido:?)\s*({AMT})\s*{CUR}")
