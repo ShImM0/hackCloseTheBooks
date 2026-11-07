@@ -53,6 +53,8 @@ def _map_items(rec: pl.DataFrame, ctx) -> pl.DataFrame:
            .join(by_mandate, on="mandate_id", how="left")
            .join(by_iban, on="debtor_iban", how="left")
            .join(acc, on="account_id", how="left")
+           # cuentas secundarias ("ES01-PENA-EUR-2") no están en el maestro: la entidad es el prefijo del id
+           .with_columns(pl.coalesce("acc_entity", pl.col("account_id").str.split("-").list.first()).alias("acc_entity"))
            .with_columns(pl.coalesce("pm", "pi").alias("party_id"),
                          pl.col("remittance_info").str.extract(r"(\d{4,})\D*$").str.strip_chars_start("0").alias("rdig")))
     ari = (ctx.items.filter(pl.col("item_type") == "ARI")
@@ -65,7 +67,7 @@ def _map_items(rec: pl.DataFrame, ctx) -> pl.DataFrame:
              (pl.col("rdig").is_not_null() & (pl.col("rdig").str.len_chars() >= 4)
               & pl.col("idig").str.ends_with(pl.col("rdig"))).cast(pl.Int32).alias("s_doc"),
              (pl.col("total_cents") == pl.col("amount_cents")).cast(pl.Int32).alias("s_amt"),
-             (pl.col("entity") == pl.col("acc_entity")).cast(pl.Int32).alias("s_ent"))
+             (pl.col("entity") == pl.col("acc_entity")).fill_null(False).cast(pl.Int32).alias("s_ent"))
          .with_columns((pl.col("s_doc") * 4 + pl.col("s_amt") * 2 + pl.col("s_ent")).alias("score"))
          .filter(pl.col("score") >= 2)
          .sort(["rid", "score", "issue_date"], descending=[False, True, False])
