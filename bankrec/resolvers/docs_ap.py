@@ -9,7 +9,11 @@ transferencia, los de su end_to_end_id; las notas de crédito compensadas van en
   la fecha de vencimiento de sus partidas y se casa con el importe y la fecha del cargo.
 Fila del run -> partida: nº de documento normalizado + tipo (INVOICE->API, CREDIT_NOTE->APC); si hay varias, el
 proveedor del IBAN del beneficiario, el importe del documento y la entidad. Importe de la fila = |document_amount|.
-No pone excepciones (PARTIAL, FX_DIFFERENCE… las decide exceptions.finalize).
+- reembolso del proveedor (§5.9, resolve): abono por el saldo exacto de una APC abierta, con tercero por IBAN/nombre
+  o por el nº de abono/factura citado.
+- transferencia devuelta (§2 RETURNED): abono = importe de una transferencia anterior de la misma cuenta, con el
+  beneficiario (o su e2e) en el texto -> sus documentos reabiertos como RETURNED.
+Excepciones (PARTIAL, FX_DIFFERENCE…): las decide exceptions.finalize, salvo RETURNED.
 Entradas: ctx (bankrec.phase.Phase). Salida: dict bank_txn_id -> Proposal (resolve_batch).
 """
 from __future__ import annotations
@@ -20,7 +24,7 @@ import re
 
 import polars as pl
 
-from bankrec import config, load
+from bankrec import config, load, parties, refs
 from bankrec.contract import Alloc, Proposal
 
 NAME = "docs_ap"
@@ -30,6 +34,10 @@ _RUN = re.compile(r"\b(CF\d{9,})\b")
 _COUNT = re.compile(r"CF\d{9,}\s+(\d+)\s+PROVEEDOR", re.I)   # "REMESA CF… 8 PROVEEDORES"
 _LOOKBACK = dt.timedelta(days=150)   # los cargos de confirming/agregados citan runs de semanas antes
 _LOOKAHEAD = dt.timedelta(days=45)  # confirming: la remesa se genera antes del cargo, pero su fecha puede ser posterior
+_NAME_MIN = 85                      # parecido de nombre mínimo (0-100), igual que amount_match
+_MARGIN = 5
+_FACTORY = {"ES00": ("ES00", "ES01", "ES02", "PT01")}   # §5.2: ES00 cobra/paga por sus filiales
+_RETURN_DAYS = 45                   # una transferencia rechazada vuelve en días o semanas
 _SLACK = 7                          # días entre la ejecución y el cargo en banco
 
 
@@ -82,6 +90,10 @@ def _map_items(rows: pl.DataFrame, ctx) -> pl.DataFrame:
 def prepare(ctx) -> None:
     sh: dict = {"by_txn": {}}
     ctx.shared[NAME] = sh
+    parties.prepare(ctx)
+    # factura original de cada abono (related_document), para el reembolso del proveedor
+    apc = ctx.items.filter((pl.col("item_type") == "APC") & pl.col("related_document").is_not_null())
+    sh["rel"] = dict(zip(apc["item_id"].to_list(), apc["related_document"].to_list()))
     runs = _runs(ctx)
     if runs.is_empty():
         return
@@ -178,6 +190,27 @@ def prepare(ctx) -> None:
                     g[3] = True
                 out[t] = [x for g in sel for x in alloc_of(g[2])]; used.add(t)
 
+    # 5) transferencia devuelta por el banco del beneficiario (POLICIES §2 RETURNED): abono en la misma cuenta, mismo
+    #    importe que una transferencia anterior y el beneficiario en el texto (o su e2e completo) -> reabre sus documentos.
+    credits = ctx.txns.filter(pl.col("amount_cents") > 0).select(
+        "bank_txn_id", "account_id", "booking_date", pl.col("amount_cents").alias("amt"),
+        pl.concat_str([pl.col("text"), pl.col("ref1"), pl.col("ref2"), pl.col("remittance_info"), pl.col("end_to_end_id")],
+                      separator=" ", ignore_nulls=True).alias("txt"))
+    cand = (tr.select("end_to_end_id", "debtor_account_id", "transfer_amount_cents", "execution_date", "beneficiary", "docs")
+            .join(credits, left_on=["debtor_account_id", "transfer_amount_cents"], right_on=["account_id", "amt"])
+            .with_columns((pl.col("booking_date") - pl.col("execution_date")).dt.total_days().alias("lag"))
+            .filter(pl.col("lag").is_between(0, _RETURN_DAYS)))
+    ret: dict[str, list] = {}
+    if cand.height:
+        cand = cand.with_columns(
+            pl.struct("txt", "beneficiary", "end_to_end_id").map_elements(
+                lambda r: 2 if r["end_to_end_id"] and r["end_to_end_id"] in (r["txt"] or "") else _name_hit(r["txt"], r["beneficiary"]),
+                return_dtype=pl.Int32).alias("hit")).filter(pl.col("hit") > 0)
+        for t, grp_t in cand.group_by("bank_txn_id"):
+            best = grp_t.filter(pl.col("hit") == grp_t["hit"].max())
+            if best.height == 1:       # varias transferencias posibles: no se decide
+                ret[t[0]] = alloc_of(best["docs"][0])
+    sh["returns"] = ret
     sh["by_txn"] = out
     log.info("docs_ap: %d filas de run, %d cargos casados", rows.height, len(out))
 
@@ -238,4 +271,43 @@ def resolve_batch(ctx) -> dict[str, Proposal]:
         if allocs:
             out[t] = Proposal(t, allocs, confidence=0.95 if not miss else 0.7, resolver=NAME,
                               reason=f"payment_run {len(rows)} docs, {miss} sin partida")
+    for t, rows in ctx.shared.get(NAME, {}).get("returns", {}).items():
+        allocs = [Alloc(i, c, "RETURNED") for i, c in dict(((i, c) for i, c in rows if i)).items()]
+        if allocs and t not in out:
+            out[t] = Proposal(t, allocs, confidence=0.9, resolver=NAME, reason=f"transferencia devuelta, {len(allocs)} docs")
     return out
+
+
+def resolve(txn: dict, ctx, ledger) -> Proposal | None:
+    """Reembolso del proveedor (POLICIES §5.9): abono bancario que liquida una nota de crédito de proveedor (APC)
+    abierta por su saldo exacto. Tercero por IBAN/nombre o por el número de factura/abono citado en el texto."""
+    amt = txn["amount_cents"]
+    if amt <= 0:
+        return None
+    ents = _FACTORY.get(txn["entity"], (txn["entity"],))
+    cands = [i for e in ents for i in ledger.with_amount(e, txn["currency"], amt)
+             if ledger.info[i][0] == "APC" and (ledger.info[i][4] is None or ledger.info[i][4] <= txn["booking_date"])]
+    if not cands:
+        return None
+    hay = refs.haystack(txn)
+    toks = refs.tokens(hay)
+    tctx = parties.context(txn)
+    rel = ctx.shared[NAME]["rel"]
+    scored = {}
+    for c in cands:
+        pid = ledger.info[c][3]
+        name = parties.score(tctx, pid, ctx)
+        ref = max(refs.ref_score(ledger.info[c][5], toks), refs.ref_score(rel.get(c), toks))
+        scored[c] = (name, ref)
+    # 1) número citado (abono o factura original) + nombre razonable; 2) nombre claro y único
+    by_ref = [c for c, (n, r) in scored.items() if r >= 85 and n >= 60]
+    if len(by_ref) == 1:
+        c = by_ref[0]
+        return Proposal(txn["bank_txn_id"], [Alloc(c, amt)], confidence=0.9, resolver=NAME, reason="reembolso proveedor: nº citado")
+    ranked = sorted(((n, c) for c, (n, r) in scored.items()), reverse=True)
+    best_n, best_c = ranked[0]
+    if best_n >= _NAME_MIN and (len(ranked) == 1 or ranked[1][0] <= best_n - _MARGIN or ledger.info[ranked[1][1]][3] == ledger.info[best_c][3]):
+        mine = sorted((c for n, c in ranked if ledger.info[c][3] == ledger.info[best_c][3]), key=ledger._fifo)
+        return Proposal(txn["bank_txn_id"], [Alloc(mine[0], amt)], confidence=best_n / 100, resolver=NAME,
+                        reason=f"reembolso proveedor: nombre {best_n:.0f}")
+    return None

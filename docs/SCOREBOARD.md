@@ -7,6 +7,10 @@
 | 2026-11-07 | P4 | categorías conservadoras + router orientativo + QA + preparación manual; sample visto en desarrollo | 3.25 | no disponible: TRAIN vacío | no enviado: LIVE vacío |
 | 2026-11-07 11:06 | P1 | medición equipo en 707fc7c (nonitem + router + docs_dd) | 18.98 | 17.00 (P 0.998 R 0.132) | — |
 | 2026-11-07 11:35 | P1 | refs + parties + ledger FIFO + text_ref + amount_match (1:1 importe exacto) | 39.31 | 38.30 (P 0.997 R 0.249) | — |
+| 2026-11-07 | P4 | auditoría 2023/2024 sin cambiar reglas; val completo + comprobación de ids conocidos | — | 38.29 (P 0.9969 R 0.2492) | sin envío confirmado |
+| 2026-11-07 12:10 | P1 | text_ref.by_ref: referencia + tercero sin importe exacto (+ exceptions P3) | — | 44.35 (P 0.988 R 0.276) | — |
+| 2026-11-07 11:48 | P1 | envío LIVE `envio_live_1148_09b5ddf.csv.gz` (main 09b5ddf; val 60.04) | — | 60.04 | **59.67** |
+| 2026-11-07 12:20 | P1 | ranker LightGBM (último de la cascada, entrena con < ctx.start) | — | 61.23 (P 0.995 R 0.456) | — |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe
@@ -16,7 +20,7 @@ restos): `ledger.open_at` solo conserva las que siguen vivas después del corte.
 
 P4: baseline local sample 2.80 → 3.25; smoke verde y siete pruebas de regresión pasan.
 El sample se utilizó para desarrollo, no es holdout. Se retiraron reglas ambiguas aunque redujeran la nota sample.
-No se ha podido comprobar la fila histórica del starter LIVE: el artefacto no existe en este checkout.
+Estado actualizado: TRAIN/LIVE disponibles y ruta local configurada. Las referencias anteriores a datos vacíos describen el estado inicial. Los ficheros LIVE preparados siguen sin envío confirmado.
 Detalle y estrategia de evaluación sin fuga: `reports/P4_QA.md`.
 
 - 2026-11-07T10:04:27.771974+00:00 · P4 · LIVE PREPARADO, NO ENVIADO: `out/live/prepared_20261107T100427771974Z_34942b0cce96.csv.gz` · SHA-256 `34942b0cce969d3cc222b765832c55f8d453f5ad5ed34563b2fad4e72645088e` · 203083 movimientos. Nota pendiente de envío manual.

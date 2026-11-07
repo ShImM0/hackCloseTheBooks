@@ -13,11 +13,14 @@ import polars as pl
 
 from bankrec import config
 from bankrec.resolvers import nonitem, router
-from bankrec.validate import submission_rows, validate
+from bankrec.validate import submission_rows, unknown_item_ids, validate
 
 spec = importlib.util.spec_from_file_location('submit_p4', config.REPO_ROOT / 'scripts' / 'submit.py')
 submit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(submit)
+audit_spec = importlib.util.spec_from_file_location('p4_audit', config.REPO_ROOT / 'scripts' / 'p4_category_audit.py')
+audit = importlib.util.module_from_spec(audit_spec)
+audit_spec.loader.exec_module(audit)
 
 
 def txn(text='', amount=10000, code='04', tid='BT-2025-0000001', day=1):
@@ -95,6 +98,27 @@ class Validation(unittest.TestCase):
         self.assertFalse(errors)
         self.assertEqual(len(warnings), 2)
 
+    def test_automatic_unknown_check_uses_prior_items_without_golden(self):
+        prior = 'ARI-2024-0000001'
+        fake = 'ARI-2030-0000001'
+        def table(folder, name):
+            self.assertNotEqual(name, 'golden_allocations')
+            return pl.DataFrame({'item_id': [prior]}) if (folder, name) == ('train', 'ar_invoices') else None
+        with patch('bankrec.validate.load.table', side_effect=table):
+            self.assertEqual(unknown_item_ids('final', {prior, fake}), {fake})
+            errors, warnings = self.check(f'BT-2025-0000001,{fake},1.00,,\n', check_known_items=True)
+            self.assertFalse(errors)
+            self.assertEqual(warnings, ['1 item_id desconocidos (FP seguros)'])
+
+    def test_final_categories_come_from_updated_masters(self):
+        masters = self.root / 'final' / 'masters_final'
+        masters.mkdir(parents=True)
+        (masters / 'categories.csv').write_text('category,description,gl_account\nFINAL_CATEGORY,Nueva,1\n', encoding='utf-8')
+        p = self.root / 'final.csv'
+        p.write_text(self.header + 'BT-2025-0000001,,,FINAL_CATEGORY,\n', encoding='utf-8')
+        with patch.object(config, 'data_dir', return_value=self.root):
+            self.assertEqual(validate(p, 'final', self.ids), ([], []))
+
     def test_server_csv_variants(self):
         p = self.root / 'sub.csv.gz'
         raw = '\ufeff EXCEPTION ; CATEGORY ; AMOUNT ; ITEM_ID ; BANK_TXN_ID\r\n ; ; 1,00 ; ARI-2025-0000001 ; BT-2025-0000001\r\n'
@@ -120,6 +144,19 @@ class Validation(unittest.TestCase):
             p.write_text(self.header, encoding='utf-8')
             self.assertTrue(submit.prepare_submission(p, 'live')['errors'])
             self.assertEqual(before, set((self.root / 'out' / 'live').iterdir()))
+
+
+class Audit(unittest.TestCase):
+    def test_metrics_count_intercepted_invoices_and_abstentions(self):
+        frame = pl.DataFrame({'predicted': ['BANK_FEES', 'BANK_FEES', '', 'PAYROLL'],
+                              'category': ['BANK_FEES', '', 'CASH_POOL', 'BANK_FEES']})
+        m = audit.summarize(frame)
+        self.assertEqual(m['predicted'], 3)
+        self.assertEqual(m['correct'], 1)
+        self.assertEqual(m['intercepted_item_payments'], 1)
+        self.assertEqual(m['false_categories'], 2)
+        self.assertAlmostEqual(m['precision'], 1/3)
+        self.assertAlmostEqual(m['recall'], 1/3)
 
 
 if __name__ == '__main__':

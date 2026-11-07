@@ -56,7 +56,23 @@ def submission_rows(data: bytes) -> list[dict[str, str]]:
             for row in csv.reader(stream, delimiter=delim) if row and any(c.strip() for c in row)]
 
 
-def validate(path: Path, phase: str, txn_ids: list[str] | None = None, known_items: set[str] | None = None) -> tuple[list[str], list[str]]:
+def unknown_item_ids(phase: str, submitted: set[str]) -> set[str]:
+    """Busca solo ids enviados en tablas de partidas actuales y anteriores, sin golden."""
+    remaining = set(submitted)
+    folders = [config.PHASES[phase][0], *config.PRIOR_FOLDERS.get(phase, [])]
+    for folder in dict.fromkeys(folders):
+        for name in ('open_items_at_start', 'ar_invoices', 'ap_invoices', 'credit_notes'):
+            if not remaining:
+                return remaining
+            table = load.table(folder, name)
+            if table is not None:
+                found = table.filter(pl.col('item_id').is_in(list(remaining)))['item_id']
+                remaining.difference_update(found.to_list())
+    return remaining
+
+
+def validate(path: Path, phase: str, txn_ids: list[str] | None = None, known_items: set[str] | None = None,
+             *, check_known_items: bool = False) -> tuple[list[str], list[str]]:
     S = scorer()
     g = S.Golden()
     g.exceptions = list(config.EXCEPTIONS)
@@ -76,12 +92,15 @@ def validate(path: Path, phase: str, txn_ids: list[str] | None = None, known_ite
         if m["txns_covered"] != m["txns_total"]:
             errors.append(f"cubre {m['txns_covered']} de {m['txns_total']} movimientos")
         rd = submission_rows(data)
+        submitted = {r['item_id'] for r in rd if r['item_id']}
+        missing = (submitted - known_items if known_items is not None else
+                   unknown_item_ids(phase, submitted) if check_known_items else set())
         bad_dec, unknown = 0, 0
         for r in rd:
             a = r["amount"]
             if a and not re.fullmatch(r"\d+[.,]\d{2}", a):
                 bad_dec += 1
-            if known_items is not None and r["item_id"] and r["item_id"] not in known_items:
+            if r["item_id"] in missing:
                 unknown += 1
         if bad_dec:
             warnings.append(f"{bad_dec} importes sin 2 decimales")
@@ -97,7 +116,7 @@ def main():
     ap.add_argument("--phase", required=True, choices=list(config.PHASES))
     ap.add_argument("--months", type=int, default=None)
     a = ap.parse_args()
-    errors, warnings = validate(Path(a.submission), a.phase, phase_txn_ids(a.phase, a.months))
+    errors, warnings = validate(Path(a.submission), a.phase, phase_txn_ids(a.phase, a.months), check_known_items=True)
     for w in warnings:
         print("AVISO:", w)
     for e in errors:
