@@ -17,6 +17,7 @@
 | 2026-11-07 13:10 | P4 | nonitem: patrones auditados 2023/24 (cash pool por maestro, préstamos, divisa, impuestos, seguros, TGSS); cascada estándar, base fd7f56d (anterior a 63.39 de P1) | 55.36 | 59.90 (P 0.9956 R 0.4472; txnAcc 0.7789; excF1 0.283) | — |
 | 2026-11-07 13:10 | P4 | + `nonitem_unmatched` al final de la cascada, base fd7f56d (`scripts/p4_run.py`; falta registrarlo, P1) | — | 60.36 (txnAcc 0.7764; excF1 0.311; UNIDENTIFIED F1 0.19→0.47) | no enviado; LIVE válido, 392.949 filas, 2 min 28 s |
 | 2026-11-07 12:35 | P1 | fallback: UNIDENTIFIED sin excepción si cliente reconocido o lote; guarda OVERPAYMENT (efectivo > 1,35×saldo) | — | 63.76 (excF1 0.398; UNIDENTIFIED F1 0.28→0.44, OVERPAYMENT P 0.03→0.11) | — |
+| 2026-11-07 12:50 | P1 | registry: + nonitem_unmatched (P4) al final, sobre main d145a0d | — | 65.87 (P 0.995 R 0.493; excF1 0.410; UNIDENTIFIED F1 0.55) | — |
 
 Comprobación del ledger: partidas abiertas reconstruidas a 2025-07-01 desde TRAIN (total − Σ golden, RETURNED suma,
 DUPLICATE_PAYMENT no resta) vs `live/open_items_at_start`: 100 % de los 325.419 ids presentes, 99,70 % con importe
