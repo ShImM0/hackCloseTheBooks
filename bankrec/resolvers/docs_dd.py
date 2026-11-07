@@ -24,9 +24,8 @@ from bankrec.contract import Alloc, Proposal
 NAME = "docs_dd"
 log = logging.getLogger("bankrec")
 
-_MANDATE = re.compile(r"VTM-[A-Z]{2}-\d+")
+_MANDATE = re.compile(r"\b[A-Z]{3}-[A-Z]{2}-\d{4,}\b")   # mandato: prefijo-país-número (formato general)
 _BATCH = re.compile(r"(?:REM|DEV)\s*(\d{11})")
-_DIGITS = re.compile(r"(\d{4,})\D*$")
 
 
 def _receipts(ctx) -> pl.DataFrame:
@@ -179,7 +178,7 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     its = [c for c in sh.get("party_amount", {}).get((party, -amt), []) if c[0] is not None and c[0] <= limit]
     if not its:
         return None
-    d, item = max(its, key=lambda c: (not ledger.is_open(c[1]), c[0]))
+    _, item = max(its, key=lambda c: (not ledger.is_open(c[1]), c[0]))
     return Proposal(txn["bank_txn_id"], [Alloc(item, -amt, "RETURNED")], confidence=0.8, resolver=NAME,
                     reason=f"devolución mandato {mandate} (cliente+importe)")
 
