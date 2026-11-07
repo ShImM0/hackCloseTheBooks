@@ -76,6 +76,17 @@ def cross_border(txn: dict) -> bool:
     return "XBCT" in (txn.get("bank_code") or "") or "EN DIV" in (txn.get("text") or "").upper()
 
 
+def charges_possible(txn: dict, st, party) -> bool:
+    """¿Puede el banco intermediario haber cobrado gastos? (POLICIES §3 SHORT_BANK_CHARGES). Además de la marca del
+    extracto (cross_border), un cliente de otro país que la sociedad: los MT940 no traen la familia ISO y en TRAIN
+    2021-2025 hay 109 SHORT_BANK_CHARGES así (CH/MT→IT, CH/MA→FR, US→MX) y 0 con cliente del mismo país. El descuento
+    por pronto pago (LU→NL, FR→ES) se comprueba antes. Países de los maestros: sin listas fijas."""
+    if cross_border(txn):
+        return True
+    cc, ec = st.country.get(party), st.ent_country.get(txn.get("entity"))
+    return bool(cc and ec and cc != ec)
+
+
 # ----------------------------------------------------------------------------------------------- índices
 
 class _State:
@@ -96,6 +107,8 @@ class _State:
                 self.terms[r["code"]] = (round(float(r["early_payment_discount_pct"]) * 100), int(float(r["discount_days"])))
         cu = ctx.master("customers")
         self.country = dict(zip(cu["customer_id"].to_list(), cu["country"].to_list()))
+        en = ctx.master("entities")
+        self.ent_country = dict(zip(en["entity"].to_list(), en["country"].to_list()))
         # tarjeta web y recibos domiciliados nunca llevan excepción salvo RETURNED (el efectivo es el neto del lote)
         self.noexc = {c for c, t in zip(cu["customer_id"].to_list(), cu["customer_type"].to_list())
                       if t in ("WEB_CARD", "INSTALLER_DD")}
@@ -399,7 +412,8 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0, doc=False)
             and any(amts[i] < opens[i] - tol for i in live) and all(amts[i] <= opens[i] + tol for i in live)):
         for i in live:
             if amts[i] < opens[i] - tol:
-                out[i] = _explain_explicit(rows[i], opens[i], amts[i], date, st, tol, cross_border(txn))
+                out[i] = _explain_explicit(rows[i], opens[i], amts[i], date, st, tol,
+                                                 charges_possible(txn, st, rows[i][1][1]))
         return out
 
     if fx:
@@ -483,7 +497,7 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0, doc=False)
                     out[i] = Alloc(rows[i][0].item_id, opens[i], "SHORT_WITHHOLDING")
                 return out
     # 4. gastos bancarios del banco intermediario: una sola factura, ≤ 60 EUR y ≤ 2 %
-    if len(live) == 1 and not live_cn and cross_border(txn):
+    if len(live) == 1 and not live_cn and charges_possible(txn, st, rows[live[0]][1][1]):
         i = live[0]
         eur = st.convert(delta, icur, "EUR", date)
         if 0 < delta <= BC_MAX_PCT * opens[i] and eur <= BC_MAX_EUR * 100:

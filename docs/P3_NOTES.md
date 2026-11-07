@@ -130,3 +130,19 @@ Sin ventana: BT-2025-0190528, -0191289, -0190384, -0190524, -0183681, -0191187, 
   `parties` y el ledger. Confirmar en val y en 2023/2024 (CLAUDE.md, anti-overfitting).
 - Lookalikes (`unidentified_lookalike`): exigir ≥ 2 partidas en la ventana y tercero identificado; nunca ventana de 1.
 - En sample el saldo inicial es el total (`phase.py:120`): medir en val, no en sample.
+
+## ar_n_to_m y revisión general (sample 2025-06)
+
+**Ojo al leer sample:** el saldo inicial es el total (`phase.py:120`). ~240 de los 245 fallos de excepción en sample
+son «pago del resto» de facturas anteriores a junio (golden sin excepción, nosotros PARTIAL): `text_ref` 125,
+`docs_ap` 69, `short_cash` 37; también `ar_partial`, `ar_retention_release`, `ar_dispute_settlement`. No arreglar
+en exceptions.py: en val/live/final el saldo es real. Medir siempre en val.
+
+**ar_n_to_m** (102 cobros, 417 pares): un cobro liquida varias facturas completas y deja la última PARTIAL (58) o
+remata el resto de otra (44). Hoy: `nonitem_unmatched` 54 cobros (218 pares, sin asignar); `text_ref` 30 cobros casa
+solo la factura citada (15/68 pares); `subset_sum` 3 cobros 19/50.
+- FIFO puro por cliente (`scripts/p3_nm_sim.py`): 53/102 cobros, precisión de pares 76 % → NO aplicar a ciegas;
+  el golden se salta facturas que luego paga otro cobro.
+- «Factura citada + resto FIFO» cuando el cobro supera la citada (`scripts/p3_nm_fill.py`): ar_n_to_m 16/25 ok
+  (hoy 0), pero ar_overpayment 7/9 (hoy 9/9). Hace falta un discriminante (p. ej. texto con varias referencias /
+  cortado, o exceso ≥ una factura entera del cliente) antes de proponerlo. Es de text_ref / multi_ref_fill (P1).

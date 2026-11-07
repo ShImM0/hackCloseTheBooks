@@ -25,7 +25,7 @@ import polars as pl
 
 from bankrec import parties
 from bankrec.contract import Alloc, Proposal
-from bankrec.exceptions import (cross_border, overpay_shape, BC_MAX_EUR, BC_MAX_PCT, PARTIAL_FRACS, DISPUTE_FRACS,
+from bankrec.exceptions import (charges_possible, cross_border, overpay_shape, BC_MAX_EUR, BC_MAX_PCT, PARTIAL_FRACS, DISPUTE_FRACS,
                                 WH_BPS, _plan, _state)
 from bankrec.resolvers.amount_match import MARGIN, NAME_MIN
 
@@ -147,7 +147,7 @@ def _shapes(txn, ctx, ledger, pid) -> tuple[str, str, int] | None:
             continue
         live.append((iid, issue, cur, total, ledger.open.get(iid, 0), c))
     hits = {k: [] for k in range(7)}
-    xb = cross_border(txn)
+    xb = charges_possible(txn, st, pid)
     openl = [x for x in live if x[4] > 0]
     for iid, issue, cur, total, o, c in live:
         if o > 0:
