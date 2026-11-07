@@ -7,6 +7,8 @@ abonos. Pasos:
 2. citadas = partidas abiertas de ese tercero cuyo número aparece en el texto (obligatorias);
 3. si su suma == efectivo: se asignan; si no, se completa con un subconjunto ÚNICO de las demás partidas abiertas del
    tercero (facturas +, abonos −) cuya suma cuadre exacto. Si hay varias soluciones o ninguna: None.
+   - Si las citadas ya superan el cobro, la diferencia es una deducción (descuento, retención, disputa o pago
+     parcial: §3) o un abono neteado (§5.9): solo se completa con abonos.
 Importes en céntimos y en la divisa de la partida (FX: orig_amount). Las excepciones las decide exceptions.py.
 Entradas: txn, ctx, ledger. Salida: Proposal o None.
 """
@@ -101,6 +103,8 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     if rest != 0:
         free = [c for c in ctx.shared[NAME].get(pid, ()) if c not in forced and ledger.open.get(c, 0) > 0
                 and ledger.info[c][2] == cur and (ledger.info[c][4] is None or ledger.info[c][4] <= txn["booking_date"])]
+        if rest < 0:   # citadas > cobro: solo un abono puede netear la diferencia (§3, §5.9)
+            free = [c for c in free if ledger.info[c][0] == "ARC"]
         if len(free) > MAX_FREE:
             if len(free) > MAX_PARTY:
                 return None
