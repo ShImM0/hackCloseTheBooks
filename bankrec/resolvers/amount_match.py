@@ -50,6 +50,14 @@ def pick_month(cands: list[str], ledger, months: set[int]) -> str | None:
 
 
 def resolve(txn: dict, ctx, ledger) -> Proposal | None:
+    p = _exact(txn, ctx, ledger)
+    if p is None:
+        from bankrec.resolvers import text_ref
+        p = text_ref.by_ref(txn, ctx, ledger)
+    return p
+
+
+def _exact(txn: dict, ctx, ledger) -> Proposal | None:
     cands = candidates(txn, ledger)
     if not cands:
         return None
