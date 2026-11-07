@@ -148,6 +148,16 @@ def _map_rows(advs: list[dict], ctx) -> pl.DataFrame:
                 .filter(pl.col("ln") >= L).drop("dd", "dn")
         parts.append(sub.join(itl, left_on=["entity", "itype", "dd"], right_on=["entity", "itype", "suf"])
                      .select(need))
+    # 3) números cortos (1-4 dígitos: sin prefijo ni ceros a la izquierda, layout nuevo de sep-2025, POLICIES §5.4/§6):
+    #    solo candidatas con el importe exacto, sufijo de sus dígitos y un 0 justo antes (los ceros quitados)
+    short = df.filter(~pl.col("key").is_in(c1["key"].implode()) & pl.col("dd").str.len_chars().is_between(1, 4))
+    if short.height:
+        s = short.select("key", "entity", "itype", pl.col("dd").alias("sd"), "g", "ddate", "po")
+        hits = [s.join(it.with_columns(pl.col(col).alias("g")), on=["entity", "itype", "g"]) for col in ("total_cents", "open_cents")]
+        hits = pl.concat(hits).unique(["key", "item_id"], maintain_order=True)
+        lead = pl.col("dd").str.len_chars() - pl.col("sd").str.len_chars() - 1
+        hits = hits.filter(pl.col("dd").str.ends_with(pl.col("sd")) & (lead >= 0) & (pl.col("dd").str.slice(lead, 1) == "0"))
+        parts.append(hits.select(need))
     c = pl.concat(parts, how="vertical_relaxed")
     c = c.with_columns(
         ((pl.col("total_cents") == pl.col("g")) | (pl.col("open_cents") == pl.col("g"))).cast(pl.Int32).alias("s_amt"),
