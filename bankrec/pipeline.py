@@ -6,6 +6,7 @@ Un movimiento sin propuesta sale como FALLBACK (abono -> UNIDENTIFIED, cargo -> 
 from __future__ import annotations
 
 import csv
+import re
 import gzip
 import logging
 import time
@@ -20,11 +21,44 @@ from bankrec.ledger import Ledger
 log = logging.getLogger("bankrec")
 
 
-def fallback(txn: dict) -> Proposal:
+_BATCH = re.compile(r"LOCKBOX|REMISE|CHEQUE|CHQ|CARD SETTLEMENT|LIQUIDACION TPV|ABONO TPV|\bCB\b|DEPOSIT")
+KNOWN_PARTY = 90      # fallback: cobro de un cliente reconocible = casi seguro tiene partidas (1:N no resuelto)
+OVERPAY_MAX = 1.35    # efectivo/saldo: p99 de los OVERPAYMENT reales en TRAIN es 1,33; por encima es un 1:N incompleto
+
+
+def fallback(txn: dict, ctx=None) -> Proposal:
     # shortcut: cargo sin resolver -> BANK_FEES (la categoría de cargo más frecuente); P4 lo afina en nonitem.py
     if txn["amount_cents"] > 0:
+        # UNIDENTIFIED es una clase del macro-F1: solo con exception si el pagador no es un cliente reconocible
+        # (§3: "no open item exists, unknown payer"). En val, 85 % de los UNIDENTIFIED del fallback eran falsos.
+        if _BATCH.search(txn.get("text") or ""):   # remesa de cheques/tarjeta: tiene partidas aunque no las hallemos
+            return Proposal(txn["bank_txn_id"], category="UNIDENTIFIED", resolver="fallback_tercero", reason="lote")
+        if ctx is not None and "parties" in ctx.shared:
+            from bankrec import parties
+            found = parties.find(parties.context(txn), ctx, "C" + txn["entity"])
+            if found and found[0][1] >= KNOWN_PARTY:
+                return Proposal(txn["bank_txn_id"], category="UNIDENTIFIED", resolver="fallback_tercero",
+                                reason=f"cliente {found[0][0]} reconocido sin partida")
         return Proposal(txn["bank_txn_id"], category="UNIDENTIFIED", exception="UNIDENTIFIED", resolver="fallback")
     return Proposal(txn["bank_txn_id"], category="BANK_FEES", resolver="fallback")
+
+
+def _overpay_guard(prop: Proposal, txn: dict, ledger) -> None:
+    """Una sola partida con OVERPAYMENT y efectivo muy superior al saldo = pago de varias facturas del que solo se
+    ha encontrado una: el par suele ser correcto, la excepción no (en val, 97 % de OVERPAYMENT eran falsos)."""
+    if len(prop.allocs) != 1 or prop.allocs[0].exception != "OVERPAYMENT" or not prop.allocs[0].amount_cents:
+        return
+    a = prop.allocs[0]
+    info = ledger.info.get(a.item_id)
+    if not info:
+        return
+    cash = abs(txn["amount_cents"])
+    if info[2] != txn["currency"]:
+        if txn.get("orig_currency") != info[2] or not txn.get("orig_amount_cents"):
+            return
+        cash = abs(txn["orig_amount_cents"])
+    if cash > OVERPAY_MAX * a.amount_cents:
+        a.exception = ""
 
 
 def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = None) -> dict:
@@ -71,9 +105,10 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
                 prop.resolver = prop.resolver or m.NAME
                 break
         if prop is None:
-            prop = fallback(txn)
+            prop = fallback(txn, ctx)
         try:
             prop = exceptions.finalize(prop, txn, ctx, ledger) or prop
+            _overpay_guard(prop, txn, ledger)
         except Exception:
             if errors["exceptions"] == 0:
                 log.exception("exceptions.finalize falló en %s", tid)
@@ -88,7 +123,7 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
             else:
                 errors[f"alloc_descartada:{prop.resolver}"] += 1
         if prop.allocs and not allocs:
-            prop = fallback(txn)
+            prop = fallback(txn, ctx)
         prop.allocs = allocs
         ledger.apply(prop)
         if allocs:
@@ -96,7 +131,7 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
         else:
             cat = prop.category or "UNIDENTIFIED"
             # en el golden UNIDENTIFIED siempre va con category y exception UNIDENTIFIED
-            exc = "UNIDENTIFIED" if cat == "UNIDENTIFIED" else prop.exception
+            exc = "UNIDENTIFIED" if cat == "UNIDENTIFIED" and prop.resolver != "fallback_tercero" else prop.exception
             rows.append([tid, "", "", cat, exc])
         audit.append((tid, prop.resolver, float(prop.confidence), prop.reason))
 
