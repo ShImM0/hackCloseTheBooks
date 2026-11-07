@@ -15,7 +15,7 @@ from collections import defaultdict
 
 import polars as pl
 
-from bankrec import config, exceptions, phase, registry
+from bankrec import config, exceptions, phase, pipeline_post, registry
 from bankrec.contract import Proposal, fmt_cents
 from bankrec.ledger import Ledger
 
@@ -58,7 +58,8 @@ def _overpay_guard(prop: Proposal, txn: dict, ledger) -> None:
         if txn.get("orig_currency") != info[2] or not txn.get("orig_amount_cents"):
             return
         cash = abs(txn["orig_amount_cents"])
-    if cash > OVERPAY_MAX * a.amount_cents:
+    # exceso de forma reconocible (unidades enteras, +1 %, +10 %): OVERPAYMENT real aunque supere OVERPAY_MAX
+    if cash > OVERPAY_MAX * a.amount_cents and not exceptions.overpay_shape(cash, a.amount_cents):
         a.exception = ""
 
 
@@ -85,7 +86,7 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
 
     ledger = Ledger(ctx.items)
     known = set(ctx.items["item_id"].to_list())
-    rows, audit = [], []
+    rows, audit, final = [], [], []
     errors: dict[str, int] = defaultdict(int)
     for txn in ctx.txns.iter_rows(named=True):
         tid = txn["bank_txn_id"]
@@ -127,8 +128,20 @@ def run(phase_name: str, disabled: set[str] = frozenset(), months: int | None = 
             prop = fallback(txn, ctx)
         prop.allocs = allocs
         ledger.apply(prop, txn["booking_date"])
-        if allocs:
-            rows.extend([tid, a.item_id, fmt_cents(a.amount_cents), "", a.exception] for a in allocs)
+        final.append((txn, prop))
+
+    # post-pass sobre el ledger final: cobros que siguen sin partida (P1, pipeline_post)
+    t = time.perf_counter()
+    try:
+        if pipeline_post.NAME not in disabled:
+            log.info("post-pass: %d cobros resueltos por suma exacta única", pipeline_post.run(ctx, ledger, final))
+    except Exception:
+        log.exception("post-pass falló: se mantiene la salida de la cascada")
+    timings[pipeline_post.NAME] += time.perf_counter() - t
+    for txn, prop in final:
+        tid = txn["bank_txn_id"]
+        if prop.allocs:
+            rows.extend([tid, a.item_id, fmt_cents(a.amount_cents), "", a.exception] for a in prop.allocs)
         else:
             cat = prop.category or "UNIDENTIFIED"
             # en el golden UNIDENTIFIED siempre va con category y exception UNIDENTIFIED
