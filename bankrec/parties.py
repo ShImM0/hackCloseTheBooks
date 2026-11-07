@@ -64,7 +64,8 @@ def prepare(ctx) -> None:
         names[child] |= names.get(parent, set())
         for ib in ibans_of.get(parent, ()):
             iban[ib].add(child)
-    ctx.shared["parties"] = {"names": {k: [n for n in v if len(n) >= 3] for k, v in names.items()}, "iban": iban}
+    # nombres de < 5 letras ("SOL") encajan con cualquier palabra del concepto: fuera
+    ctx.shared["parties"] = {"names": {k: [n for n in v if len(n) >= 5] for k, v in names.items()}, "iban": iban}
 
 
 def context(txn: dict) -> dict:

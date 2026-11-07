@@ -37,6 +37,8 @@ def prepare(ctx) -> None:
         if len(d) >= KEY_LEN:
             idx[(ent, "s" + d[-KEY_LEN:])].append(iid)
             idx[(ent, "p" + d[:KEY_LEN])].append(iid)
+        elif len(d) >= 4:   # números cortos (formatos de proveedor, filiales nuevas): clave = número completo
+            idx[(ent, "s" + d)].append(iid)
     ctx.shared[NAME] = idx
 
 
@@ -77,7 +79,7 @@ def by_ref(txn: dict, ctx, ledger) -> Proposal | None:
     pool = set()
     for e in ents:
         for t in toks:
-            for key in ("s" + t[-KEY_LEN:], "p" + t[:KEY_LEN]):
+            for key in {"s" + t[-KEY_LEN:], "p" + t[:KEY_LEN], "s" + t}:
                 hit = idx.get((e, key), ())
                 if len(hit) <= MAX_POOL:   # claves tipo "AAMM.." genéricas: demasiado ambiguas y lentas
                     pool.update(hit)
