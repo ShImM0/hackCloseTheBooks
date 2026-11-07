@@ -2,7 +2,8 @@
 
     uv run python scripts/eval.py --phase val|sample [--sub RUTA] [--months N] [--segment X] [--dump N]
 
-- Imprime métricas y precisión por segmento (golden.segment).
+- Imprime métricas, P/R/F1 por clase de excepción (conteo por fila del scorer), la confusión predicho→golden de
+  las filas sin partida y la precisión por segmento (golden.segment). Todo queda en out/<fase>/metrics.json.
 - --dump N vuelca N movimientos fallados del segmento (--segment) o de todos a out/<fase>/failures_<segmento>.md:
   movimiento, golden, predicción y resolver/razón del audit.
 - Para val escribe antes un golden y una lista de movimientos filtrados en out/val/ (el golden completo de
@@ -57,11 +58,22 @@ def main():
         print(json.dumps(res["errors"], indent=1, ensure_ascii=False))
         sys.exit(1)
     m = res["metrics"]
+    rows = submission_rows(Path(sub).read_bytes())
+    excs = exception_report(G, rows)
+    conf = nonitem_confusion(G, rows)
     report = config.out_dir(a.phase) / 'metrics.json'
-    report.write_text(json.dumps({'phase': a.phase, 'months': a.months, 'submission': sub,
-                                  **res}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    report.write_text(json.dumps({'phase': a.phase, 'months': a.months, 'submission': sub, **res,
+                                  'exceptions': excs, 'nonitem_confusion': conf},
+                                 ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(f"SCORE {res['score']:.2f} | allocF1 {m['allocation_f1']:.4f} (P {m['precision']:.4f} R {m['recall']:.4f}) | "
           f"txnAcc {m['txn_accuracy']:.4f} | excF1 {m['exception_macro_f1']:.4f} | amtAcc {m['amount_weighted_accuracy']:.4f}")
+    print(f"{'excepción':20s} {'gold':>7s} {'pred':>7s} {'tp':>7s} {'P':>6s} {'R':>6s} {'F1':>6s}  (por fila, como el scorer)")
+    for e in sorted(excs, key=lambda e: e['f1'] if e['f1'] is not None else 2):
+        f1 = f"{e['f1']:6.3f}" if e['f1'] is not None else "    — "
+        print(f"{e['exception']:20s} {e['gold']:7d} {e['pred']:7d} {e['tp']:7d} {e['precision']:6.3f} {e['recall']:6.3f} {f1}")
+    print("sin partida, predicho -> golden (ITEM = el golden trae partidas), mayores errores:")
+    for c in conf[:12]:
+        print(f"  {c['pred']:18s} -> {c['gold']:18s} {c['n']:7d}")
     segs = sorted(res["segments"].items(), key=lambda x: -x[1]["n"] * (1 - x[1]["accuracy"]))
     print(f"{'segmento':32s} {'n':>7s} {'acc':>6s} {'fallos':>7s}")
     for k, v in segs:
@@ -70,6 +82,55 @@ def main():
         print(f"{k:32s} {v['n']:7d} {v['accuracy']:6.3f} {round(v['n'] * (1 - v['accuracy'])):7d}")
     if a.dump:
         dump(a, sub, txns, gold, G, S)
+
+
+def exception_report(G, rows) -> list[dict]:
+    """P/R/F1 por clase de excepción contadas por fila igual que starter/bankrec_score.py.
+
+    Fila con partida: acierto si su excepción coincide con la del golden para ese (txn, item), sin mirar importe.
+    Fila sin partida: acierto solo si el golden no trae partidas y su excepción coincide.
+    Solo entran en la media las clases con algún caso en el golden (las demás salen con F1 None).
+    """
+    tp, fp, gold = {}, {}, {}
+    for gi, _gcat, gexc, _seg in G.txns.values():
+        for _amt, ge in (gi.values() if gi else ()):
+            if ge:
+                gold[ge] = gold.get(ge, 0) + 1
+        if not gi and gexc:
+            gold[gexc] = gold.get(gexc, 0) + 1
+    for r in rows:
+        exc = r['exception']
+        if not exc or r['bank_txn_id'] not in G.txns:
+            continue
+        gi, _gcat, gexc, _seg = G.txns[r['bank_txn_id']]
+        if r['item_id']:
+            hit = gi.get(r['item_id'], (None, None))[1] == exc
+        else:
+            hit = not gi and gexc == exc
+        (tp if hit else fp)[exc] = (tp if hit else fp).get(exc, 0) + 1
+    out = []
+    for c in config.EXCEPTIONS:
+        if not c:
+            continue
+        t, f, g = tp.get(c, 0), fp.get(c, 0), gold.get(c, 0)
+        p_ = t / (t + f) if t + f else 0.0
+        r_ = t / g if g else 0.0
+        f1 = (2 * p_ * r_ / (p_ + r_) if p_ + r_ else 0.0) if g else None
+        out.append({'exception': c, 'gold': g, 'pred': t + f, 'tp': t, 'precision': p_, 'recall': r_, 'f1': f1})
+    return out
+
+
+def nonitem_confusion(G, rows) -> list[dict]:
+    """Pares (predicho, golden) distintos cuando alguno de los dos no trae partidas; ITEM = trae partidas."""
+    pred = {}
+    for r in rows:
+        pred.setdefault(r['bank_txn_id'], 'ITEM' if r['item_id'] else (r['category'] or ''))
+    cells = {}
+    for t, (gi, gcat, _gexc, _seg) in G.txns.items():
+        g, p = ('ITEM' if gi else gcat), pred.get(t, '(falta)')
+        if g != p:
+            cells[(p, g)] = cells.get((p, g), 0) + 1
+    return [{'pred': p, 'gold': g, 'n': n} for (p, g), n in sorted(cells.items(), key=lambda x: -x[1])]
 
 
 def _rows_by_txn(df: pl.DataFrame) -> dict:

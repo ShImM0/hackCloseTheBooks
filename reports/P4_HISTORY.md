@@ -1,4 +1,27 @@
-# P4: auditoría histórica congelada
+# P4: auditoría histórica
+
+## Versión actual (2026-11-07, tarde)
+
+SHA-256 de nonitem.py: `891e5fbee12e59acc164ce51d45a693fcf09ec57699d80af7ccca465bdb6961f`.
+`uv run python scripts/p4_category_audit.py --years 2023 2024` (golden unido después de resolver).
+
+Método: plantillas de texto de las categorías no detectadas en 2023; cada patrón nuevo se aceptó solo si en
+2023 Y 2024, sobre TODOS los movimientos (con partidas incluidos), el 100 % pertenecía a una sola categoría.
+REEMBOLSO se descartó (mezcla partidas APC y SUPPLIER_REFUND). Después se confirmó en val 2025-H1.
+
+| año | movimientos | propuestas | correctas | pagos de partidas interceptados | precisión | recall sin partida |
+|---|---:|---:|---:|---:|---:|---:|
+| 2023 | 373702 | 27045 | 27045 | 0 | 100.00% | 75.32% |
+| 2024 | 387139 | 27389 | 27389 | 0 | 100.00% | 74.84% |
+
+Sin contar UNIDENTIFIED (no es de nonitem): 54.434 de 54.668 = 99,57 % de recall. Cambios de recall: CASH_POOL
+25,7 → 100 %, FX_DEAL 62,8 → 100 %, LOAN_REPAYMENT 42,4 → 100 %, LOAN_DRAWDOWN 0 → 100 %, INSURANCE 69,1 → 100 %,
+TAX_PAYMENT 76,7 → 100 %, SOCIAL_SECURITY 93,4 → 100 %, INTERCOMPANY 96,8 → 100 %, BANK_FEES 99,5 → 100 %.
+Pendientes: SUPPLIER_REFUND 32,9 % (se confunde con reembolsos de abonos APC, que son partida) y CUSTOMER_REFUND 95 %.
+
+Val completo (2025-01..06): 59,68 antes de estos cambios; resultados en `docs/SCOREBOARD.md`.
+
+## Versión anterior (congelada)
 
 El resolver se ejecutó antes de unir las etiquetas. No se modificaron expresiones ni umbrales tras ver los resultados.
 
@@ -45,4 +68,5 @@ Ventana: enero–junio de 2025, 199.987 movimientos; el sample de junio ya se us
 
 ## Contraste con ejemplos web
 
-Pendiente: `https://hackathon.usetalky.com/ejemplos` no es accesible con ninguna de las dos herramientas web disponibles y curl falla al resolver el dominio. No se ha leído ni se afirma conformidad con su contenido. Se solicitó al usuario que pegue los ejemplos. Hasta recibirlos se mantiene la documentación oficial del repositorio como fuente de verificación.
+Resuelto: la página es una SPA y sus datos están en `https://hackathon.usetalky.com/examples.json` (36 ejemplos,
+uno por segmento). Copia en `tests/p4_web_examples.json`, cubierta por `tests/p4_test.py` (clase WebExamples).

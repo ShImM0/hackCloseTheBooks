@@ -1,7 +1,7 @@
 """Familia orientativa por movimiento, sin proponer asignaciones. Dueño: P4."""
 from __future__ import annotations
 
-from bankrec.resolvers.nonitem import classify
+from bankrec.resolvers.nonitem import classify, pool_accounts
 
 NAME = "router"
 
@@ -9,9 +9,10 @@ NAME = "router"
 def prepare(ctx) -> None:
     """Guarda bank_txn_id → nonitem / AR / AP / lote para consulta opcional."""
     routes = {}
+    pool = pool_accounts(ctx)
     for txn in ctx.txns.iter_rows(named=True):
         code = (txn.get('bank_code') or '').upper()
-        if classify(txn):
+        if classify(txn, pool):
             family = 'nonitem'
         elif txn['amount_cents'] > 0 and code in {'19', 'NDDT', 'PMNT/RDDT/ESDD', 'PMNT/MCRD/POSC'}:
             family = 'lote'

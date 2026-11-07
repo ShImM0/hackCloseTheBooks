@@ -20,8 +20,25 @@ def normalized(value: str) -> str:
     return " ".join("".join(c for c in value if not unicodedata.combining(c)).upper().replace(" | ", " ").split())
 
 
-def classify(txn: dict) -> tuple[str, str] | None:
-    """Devuelve categoría y evidencia; None conserva la cascada de partidas."""
+def pool_accounts(ctx) -> frozenset[str]:
+    """Cuentas cabecera o participantes de cash pooling según `bank_accounts.purpose` (en FINAL, masters_final)."""
+    master = getattr(ctx, "master", None)
+    if master is None:
+        return frozenset()
+    acc = master("bank_accounts")
+    return frozenset(a for a, purpose in acc.select("account_id", "purpose").iter_rows()
+                     if "cash pool" in (purpose or "").lower())
+
+
+def classify(txn: dict, pool: frozenset[str] = frozenset()) -> tuple[str, str] | None:
+    """Devuelve categoría y evidencia; None conserva la cascada de partidas.
+
+    `pool`: cuentas del cash pooling (pool_accounts). POLICIES §4: los barridos entre participantes y cabecera son
+    CASH_POOL; en esas cuentas el banco los describe también como traspaso propio o entre cuentas.
+    Patrones añadidos tras la auditoría 2023/2024 (100 % de una sola categoría en ambos años, sin partidas):
+    CASH CONCENTRATION, PRES.XX / AMORTIZACION POLIZA, DISPOSICION POLIZA, COMPRA/VENTA DIVISA,
+    LIQUIDACION CTA.CTO, TAX AUTHORITY / DGFIP, TGSS, SEGUROS y DEVOLUCION PRESTAMO / PRESTAMO INTRAGRUPO.
+    """
     code = (txn.get("bank_code") or "").upper()
     text = normalized(" ".join(txn.get(k) or "" for k in ("text", "remittance_info")))
     amount = txn["amount_cents"]
@@ -41,40 +58,42 @@ def classify(txn: dict) -> tuple[str, str] | None:
     # Un código bancario aislado no basta: DATA_DICTIONARY avisa de inconsistencias.
     elif hit(r"\bFACTURA\b|\bINVOICE\b|\bFACT\.\s|\bDEDUCIR\b|\bDEDUCCION\b|\bDEDUCTION\b|\bMENOS PROFORMA\b"):
         return None
-    elif hit(r"CASH ?POOL|ZBA SWEEP|ZERO BALANCING|NIVELACION SALDO"):
+    elif hit(r"CASH ?POOL|ZBA SWEEP|ZERO BALANCING|NIVELACION SALDO|CASH CONCENTRATION"):
         category = "CASH_POOL"
-    elif hit(r"INTRAGRUPO|INTERCOMPANY|\b(?:FINANCIACION|PRESTAMO|TRANSF\.) IC\b"):
+    elif txn.get("account_id") in pool and hit(r"\bTRASPASO (?:PROPIO|ENTRE CUENTAS)\b"):
+        category = "CASH_POOL"
+    elif hit(r"INTRAGRUPO|INTERCOMPANY|\b(?:FINANCIACION|PRESTAMO|TRANSF\.) IC\b|DEVOLUCION PRESTAM|PRESTAMO INTRAGRUP"):
         category = "INTERCOMPANY"
     elif hit(r"TRASPASO (?:A|DE) CTA\b|TRANSFER BETWEEN OWN ACCOUNTS"):
         category = "INTERNAL_TRANSFER"
     elif hit(r"\bNOMINAS?\b|\bPAYROLL\b|SALARY PAYMENT"):
         if not credit:
             category = "PAYROLL"
-    elif hit(r"SEGURIDAD SOCIAL|SOCIAL CHARGES|\bURSSAF\b|SOZIALVERSICHERUNG"):
+    elif hit(r"SEGURIDAD SOCIAL|SOCIAL CHARGES|\bURSSAF\b|SOZIALVERSICHERUNG|\bTGSS\b"):
         if not credit:
             category = "SOCIAL_SECURITY"
-    elif hit(r"\bIMPUESTOS?\b|\bTAX (?:PAYMENT|REFUND)\b|\bVAT RETURN\b|DEVOLUCION (?:IVA|HACIENDA)"):
+    elif hit(r"\bIMPUESTOS?\b|\bTAX (?:PAYMENT|REFUND)\b|\bVAT RETURN\b|DEVOLUCION (?:IVA|HACIENDA)|\bTAX AUTHORITY\b|\bDGFIP\b"):
         category = "TAX_REFUND" if credit else "TAX_PAYMENT"
     elif hit(r"LIQUIDACION (?:DE )?INTERESES|INTEREST (?:CREDIT|DEBIT|SETTLEMENT|PAYMENT)") and not hit(r"COMISION"):
         category = "INTEREST_INCOME" if credit else "INTEREST_EXPENSE"
-    elif hit(r"\bCOMISION(?:ES)?\b|\bCOM\. |FRAIS VIREMENT|MAINTENANCE FEE|SERV\. EM\. TRANSF\."):
+    elif hit(r"\bCOMISION(?:ES)?\b|\bCOM\. |FRAIS VIREMENT|MAINTENANCE FEE|SERV\. EM\. TRANSF\.|LIQUIDACION CTA\.? ?CTO\b"):
         if not credit:
             category = "BANK_FEES"
     elif hit(r"\bCUOTA (?:LEASING|RENTING|ARRENDAMIENTO|LSG)\b"):
         if not credit:
             category = "LEASING"
-    elif hit(r"AMORTIZACION DE PRESTAMO|LOAN REPAYMENT"):
+    elif hit(r"AMORTIZACION (?:DE )?(?:PRESTAMO|POLIZA)|LOAN REPAYMENT|\bPRES\.[A-Z]{2}\d"):
         if not credit:
             category = "LOAN_REPAYMENT"
-    elif hit(r"DISPOSICION (?:DE )?PRESTAMO|LOAN DRAWDOWN"):
+    elif hit(r"DISPOSICION (?:DE )?(?:PRESTAMO|POLIZA)|LOAN DRAWDOWN"):
         if credit:
             category = "LOAN_DRAWDOWN"
-    elif hit(r"COMPRAVENTA (?:DE )?DIVISA|LIQUIDACION (?:DE )?FORWARD|FX DEAL|FX FORWARD"):
+    elif hit(r"COMPRAVENTA (?:DE )?DIVISA|\b(?:COMPRA|VENTA) (?:DE )?DIVISA\b|LIQUIDACION (?:DE )?FORWARD|FX DEAL|FX FORWARD"):
         category = "FX_DEAL"
     elif hit(r"ADEUDO MENSUAL DE TARJETA|LIQUIDACION TARJETAS DE EMPRESA|CORPORATE CARD"):
         if not credit:
             category = "CARD_EXPENSES"
-    elif hit(r"PRIMA (?:DE )?SEGURO|INSURANCE PREMIUM"):
+    elif hit(r"PRIMA (?:DE )?SEGURO|INSURANCE PREMIUM|\bSEGUROS?\b"):
         if not credit:
             category = "INSURANCE"
     elif hit(r"\bPROFORMA\b"):
@@ -102,13 +121,14 @@ def prepare(ctx) -> None:
         if len(candidates) == 1:
             paired.update((rev['bank_txn_id'], candidates[0]['bank_txn_id']))
     ctx.shared[NAME] = paired
+    ctx.shared[NAME + ".pool"] = pool_accounts(ctx)
 
 
 def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     if txn['bank_txn_id'] in ctx.shared.get(NAME, set()):
         result = ('BANK_REVERSAL', 'Anulación explícita y original único por cuenta, divisa, importe, fecha y concepto')
     else:
-        result = classify(txn)
+        result = classify(txn, ctx.shared.get(NAME + ".pool", frozenset()))
     if result is None:
         return None
     category, reason = result

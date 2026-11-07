@@ -3,6 +3,7 @@ from datetime import date
 import gzip
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -11,8 +12,8 @@ from unittest.mock import patch
 
 import polars as pl
 
-from bankrec import config
-from bankrec.resolvers import nonitem, router
+from bankrec import config, parties
+from bankrec.resolvers import nonitem, nonitem_unmatched, router
 from bankrec.validate import submission_rows, unknown_item_ids, validate
 
 spec = importlib.util.spec_from_file_location('submit_p4', config.REPO_ROOT / 'scripts' / 'submit.py')
@@ -68,6 +69,103 @@ class Categories(unittest.TestCase):
         ctx.txns = pl.DataFrame([original, reversal, other])
         nonitem.prepare(ctx)
         self.assertFalse(ctx.shared['nonitem'])
+
+
+    def test_audited_patterns_and_pool_accounts(self):
+        # Patrones auditados en 2023 y 2024 (reports/P4_HISTORY.md); números y entidades ficticios.
+        for t, category in [
+            (txn('CASH CONCENTRATION XX01 2031', 5000, 'NEWCODE'), 'CASH_POOL'),
+            (txn('AMORTIZACION POLIZA CREDITO 77', -100, '05'), 'LOAN_REPAYMENT'),
+            (txn('PRES.ZZ09-12', -100, 'NLDP'), 'LOAN_REPAYMENT'),
+            (txn('DISPOSICION POLIZA CREDITO 77', 100, '99'), 'LOAN_DRAWDOWN'),
+            (txn('VENTA DIVISA USD 1.1 OP 9 9', 100, '13'), 'FX_DEAL'),
+            (txn('COMPRA DIVISA GBP 1.1 OP 9 9', -100, '13'), 'FX_DEAL'),
+            (txn('LIQUIDACION CTA.CTO', -100, 'NCHG'), 'BANK_FEES'),
+            (txn('TAX AUTHORITY', -100, 'NMSC'), 'TAX_PAYMENT'),
+            (txn('TGSS. COTIZACION 202501', -100, '15'), 'SOCIAL_SECURITY'),
+            (txn('SEGUROS MULTIRRIESGO', -100, 'NDDT'), 'INSURANCE'),
+            (txn('DEVOLUCION PRESTAMO FILIAL NUEVA GMBH', 100, '04'), 'INTERCOMPANY'),
+        ]:
+            with self.subTest(text=t['text']):
+                self.assertEqual(nonitem.classify(t)[0], category)
+        # Traspaso propio: CASH_POOL solo en cuentas del cash pooling (maestro bank_accounts).
+        own = txn('TRASPASO PROPIO', -100, '99')
+        self.assertIsNone(nonitem.classify(own))
+        self.assertEqual(nonitem.classify(own, frozenset({'ES01-A'}))[0], 'CASH_POOL')
+        self.assertEqual(nonitem.classify(txn('TRASPASO A CTA 1234', -100), frozenset({'ES01-A'}))[0],
+                         'INTERNAL_TRANSFER')
+        accounts = pl.DataFrame({'account_id': ['A', 'B', 'C'],
+                                 'purpose': ['Cabecera cash pooling / Pagos', 'Operativa / participante cash pool', 'Cobros']})
+        self.assertEqual(nonitem.pool_accounts(SimpleNamespace(master=lambda name: accounts)), frozenset({'A', 'B'}))
+        self.assertEqual(nonitem.pool_accounts(SimpleNamespace()), frozenset())
+
+
+WEB = json.loads((Path(__file__).parent / 'p4_web_examples.json').read_text(encoding='utf-8'))['examples']
+KIND = {'AR_INVOICE': 'ARI', 'AR_CREDIT_NOTE': 'ARC', 'AP_INVOICE': 'API', 'AP_CREDIT_NOTE': 'APC'}
+
+
+def web_txn(e):
+    b = dict(e['bank'])
+    b['amount_cents'] = round(float(b['amount']) * 100)
+    return b
+
+
+def expected(e):
+    """(category, exception) de la fila sin partida del CSV esperado, o None si el movimiento casa partidas."""
+    first = e['csv'].split('\n')[1].split(',')
+    return None if first[1] else (first[3], first[4])
+
+
+class WebExamples(unittest.TestCase):
+    """Los 36 ejemplos resueltos de https://hackathon.usetalky.com/ejemplos (TRAIN, uno por segmento)."""
+
+    def test_nonitem_only_claims_nonitem_examples(self):
+        for e in WEB:
+            with self.subTest(segment=e['segment']):
+                got = nonitem.classify(web_txn(e))
+                exp = expected(e)
+                if exp and exp[0] != 'UNIDENTIFIED':
+                    self.assertEqual(got[0], exp[0])
+                else:
+                    self.assertIsNone(got)
+
+    def ctx_for(self, e):
+        """Contexto mínimo: partidas candidatas del ejemplo abiertas y nombres impresos como único maestro."""
+        items = pl.DataFrame([{'item_id': i['item_id'], 'item_type': KIND[i['kind']], 'entity': i['entity'],
+                               'party_id': 'P-' + i['party'], 'document_number': i['number'],
+                               'open_cents': abs(round(float(i['total']) * 100))} for i in e['items']],
+                             schema={'item_id': pl.String, 'item_type': pl.String, 'entity': pl.String,
+                                     'party_id': pl.String, 'document_number': pl.String, 'open_cents': pl.Int64})
+        names = {}
+        for i in e['items']:
+            names.setdefault('P-' + i['party'], set()).add(parties.norm_name(i['party']))
+        ctx = SimpleNamespace(items=items, shared={'parties': {'names': {k: list(v) for k, v in names.items()}, 'iban': {}}})
+        nonitem_unmatched.prepare(ctx)
+        ledger = SimpleNamespace(is_open=lambda iid: iid in set(items['item_id']))
+        return ctx, ledger
+
+    def test_unmatched_keeps_unidentified_only_without_open_items(self):
+        seen = set()
+        for e in WEB:
+            t = web_txn(e)
+            if t['amount_cents'] <= 0:
+                continue
+            ctx, ledger = self.ctx_for(e)
+            p = nonitem_unmatched.resolve(t, ctx, ledger)
+            with self.subTest(segment=e['segment']):
+                if expected(e) == ('UNIDENTIFIED', 'UNIDENTIFIED'):
+                    self.assertEqual((p.category, p.exception), ('UNIDENTIFIED', 'UNIDENTIFIED'))
+                    seen.add(e['segment'])
+                elif e['segment'] in {'ar_1to1', 'ar_1toN_text', 'ar_dd_batch', 'ar_card_settlement',
+                                      'ar_overpayment', 'ar_third_party_parent'}:
+                    # número citado, lote agregado o nombre distintivo: existe partida, no es UNIDENTIFIED
+                    self.assertEqual((p.category, p.exception), (nonitem_unmatched.PENDING, ''))
+        self.assertEqual(seen, {'unidentified', 'unidentified_lookalike'})
+
+    def test_unmatched_ignores_debits(self):
+        e = next(e for e in WEB if e['segment'] == 'nonitem_bank_fees')
+        ctx, ledger = self.ctx_for(e)
+        self.assertIsNone(nonitem_unmatched.resolve(web_txn(e), ctx, ledger))
 
 
 class Validation(unittest.TestCase):

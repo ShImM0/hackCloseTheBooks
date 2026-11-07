@@ -49,7 +49,8 @@ def main():
     if txns is None:
         raise FileNotFoundError('Falta TRAIN/bank_transactions.csv.gz')
     txns = txns.filter(pl.col('booking_date').dt.year().is_in(a.years)).sort('booking_date', 'bank_txn_id')
-    ctx = SimpleNamespace(txns=txns, shared={})
+    # Maestros de TRAIN (repo): mismas cuentas de cash pool que verá el resolver en val.
+    ctx = SimpleNamespace(txns=txns, shared={}, master=lambda name: load.master(name, 'val'))
     nonitem.prepare(ctx)
     rows = []
     for t in txns.iter_rows(named=True):
