@@ -10,9 +10,9 @@
 | 1 | 2026-11-07 11:48 | P1 | `09b5ddf`<br>`envio_live_1148_09b5ddf.csv.gz` | Base `nonitem` + `router` + `docs_dd` + `docs_ap` + `refs` + `parties` + `ledger` FIFO + `text_ref` + `amount_match` (1:1 y FX) | 60.04<br>*(P 99.6% · R 44.7% · excF1 28.3%)* | **59.67** | `61,2 %`<br>*(P `99,6 %` / R `44,2 %`)* | `77,7 %` | `28,8 %` | `63,4 %` | `203.083` / `392.949` / `0` |
 | 2 | 2026-11-07 12:01 | P1 | `c4f389b`<br>`envio_live_1201_c4f389b.csv.gz` | + `text_ref.by_ref` (ref+tercero sin importe exacto) + `exceptions_amounts` (P3) + ranker LightGBM + anuladas fuera (§5.7), sustitutas por alias, N43 cortado, prefijos estrictos, bloqueo por ref de otra factura | 63.39<br>*(P 99.5% · R 46.4%)* | **62.79** | `62,3 %`<br>*(P `99,5 %` / R `45,4 %`)* | `80,9 %` | `36,8 %` | `63,8 %` | `203.083` / `393.292` / `0` |
 | 3 | 2026-11-07 12:24 | P1 | `2b8c623` (`d145a0d`)<br>`envio_live_1224_2b8c623.csv.gz` | + fallback `UNIDENTIFIED` sin excepción (cliente reconocido o lote) + guarda `OVERPAYMENT` (> 1,35×saldo) + `nonitem_unmatched` (P4) al final de la cascada | 65.87<br>*(P 99.5% · R 49.3% · excF1 41.0% · UNID F1 55.0%)* | **65.09** | `64,7 %`<br>*(P `99,5 %` / R `47,9 %`)* | `82,0 %` | `40,7 %` | `80,4 %` | `203.083` / `411.137` / `0` |
-| 4 | 2026-11-07 12:28 | — | `e7c2b23`<br>`envio_live_1228_e7c2b23_p4.csv.gz` | *(pendiente de documentar)* | — | **64.93** ▼0.16 | `64,7 %`<br>*(P `99,5 %` / R `47,9 %`)* | `81,8 %` | `40,3 %` | `80,4 %` | `203.083` / `411.137` / `0` |
+| 4 | 2026-11-07 12:28 | P4 | `e7c2b23`<br>`envio_live_1228_e7c2b23_p4.csv.gz` | #2 + `docs_card` (P2) + `nonitem` P4 (patrones auditados 2023/24, cash pool por maestro) + `nonitem_unmatched` al final con `scripts/p4_run.py`; sin el fallback/guarda OVERPAYMENT de `d145a0d` ni DUPLICATE_PAYMENT | 65.54 | **64.93** ▼0.16 | `64,7 %`<br>*(P `99,5 %` / R `47,9 %`)* | `81,8 %` | `40,3 %` | `80,4 %` | `203.083` / `411.137` / `0` |
 | 5 | 2026-11-07 13:26 | P1 | `4861321`<br>`envio_live_1326_4861321.csv.gz` | #3 + DUPLICATE_PAYMENT (amount_match.duplicate) + guarda OVERPAYMENT a +10 % + subset_sum (P2) | 70.50 | **69.36** ▲4.27 vs #3 | `67,2 %`<br>*(P `89,2 %` / R `53,9 %`)* | `86,7 %` | `48,9 %` | `81,9 %` | `203.083` / `488.316` / `0` |
-| 6 | 2026-11-07 13:57 | P4 | `1eed3ec`<br>`envio_live_1357_1eed3ec.csv.gz` | #5 + cheques/contracargos (docs_card_chq, P2) + P4: UNIDENTIFIED solo sin tercero, SUPPLIER/CUSTOMER_REFUND | — | **70.23** 🏆 ▲0.87 vs #5 | `67,9 %`<br>*(P `89,3 %` / R `54,7 %`)* | `87,5 %` | `50,3 %` | `82,0 %` | `203.083` / `493.101` / `0` |
+| 6 | 2026-11-07 13:57 | P4 | `1eed3ec`<br>`envio_live_1357_1eed3ec.csv.gz` | #5 + cheques/contracargos (docs_card_chq, P2) + P4: UNIDENTIFIED solo sin tercero, SUPPLIER/CUSTOMER_REFUND | 71.38<br>*(P 90.3% · R 56.2% · excF1 51.5% · UNID F1 85.9%)* | **70.23** 🏆 ▲0.87 vs #5 | `67,9 %`<br>*(P `89,3 %` / R `54,7 %`)* | `87,5 %` | `50,3 %` | `82,0 %` | `203.083` / `493.101` / `0` |
 
 ---
 
@@ -84,3 +84,14 @@
 | 60 | `ar_1to1_remittance` | ~5 | 0,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % | 100,0 % |  |
 
 - 2026-11-07 14:50 · P1 · val main 6c2504c (docs_remit + multi_ref de P2) = 85.20; + multi_ref_fill (P1, textos cortados) = **85.53** (P 0.947 R 0.771).
+
+---
+
+## 3. Mediciones locales en val (2025-01..06, sin envío)
+
+> CLAUDE.md: cada cambio se mide con `scripts/eval.py --phase val`. A/B = misma base, solo cambia lo indicado.
+
+| Fecha-Hora | Autor | Base | Cambio medido | Val A → B | Detalle |
+| ---------------- | -- | -------- | ------------------------------------------------ | ------------: | ---------------------------------------- |
+| 2026-11-07 13:47 | P4 | `8141660` | P4 (`1eed3ec`): UNIDENTIFIED solo sin tercero identificable + SUPPLIER_REFUND/CUSTOMER_REFUND + informe de fallos y avisos de registro | 70.41 → **70.68** (+0.27) | UNIDENTIFIED F1 0.722 → 0.860 (P 0.62 → 0.91, R 0.86 → 0.82); excF1 +0.012; SUPPLIER_REFUND recall 38 → 87 %; CUSTOMER_REFUND 344/344; comprobado en 2024 (`reports/P4_HISTORY.md`) |
+| 2026-11-07 14:01 | P4 | `1eed3ec` | main completo (incluye `docs_card` cheques/lockbox de P2) | — → **71.38** | UNIDENTIFIED F1 0.859; txnAcc 0.881; precisión de asignación 0.903 (`subset_sum` 61 % de acierto: ver `reports/P4_QA.md`) |

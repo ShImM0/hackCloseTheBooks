@@ -56,16 +56,31 @@ coincide con un cliente pasan a CUSTOMER_ADVANCE: coste asumido de la regla). SU
 
 Año anterior (2024, mismas funciones): UNIDENTIFIED reales degradados 7,9 % → 12,9 % y pagos con partida cubiertos 76,5 % → 92,5 %, igual que en 2025-H1 (9,1 → 14,7 % y 76,8 → 92,2 %); SUPPLIER_REFUND y CUSTOMER_REFUND sin ningún falso en ambos años. Detalle en `reports/P4_HISTORY.md`.
 
-## Avisos para el equipo (informe de fallos de `eval.py`, val sobre main 8141660)
+## Avisos para el equipo (informe de fallos de `eval.py`, val sobre main dbe4108, 2026-11-07 14:40: **72,45**)
 
-- `subset_sum` (P2): 12.902 movimientos con acierto 61 % y 4.891 partidas equivocadas; la precisión de asignación
-  cae de 0,995 a 0,90. La nota sube por recall; que LIVE lo confirme.
-- `short_cash` (`exceptions_amounts`, P3): 5.837 movimientos, acierto 78 %, 740 partidas equivocadas.
-- UNIDENTIFIED reales casados solo por importe (la trampa «lookalike» de POLICIES §3): short_cash 176,
-  subset_sum 36, amount_match 16. Exigir tercero antes de casar por importe los devolvería.
-- Ranker (P1): 1.700 pagos de varias facturas con una sola.
-- Excepciones (P3): SHORT_DISPUTE no se predice nunca (3.036 en el golden); FX_DIFFERENCE recall 9 % (15.793);
-  SHORT_BANK_CHARGES 617 predichas con 139 aciertos; DUPLICATE_PAYMENT 1.350 con 678.
+Ordenados por puntos en juego. Cada clase de excepción vale hasta 2 puntos (20 % / 10 clases); 1.000 movimientos
+bien resueltos valen 0,15 puntos de txn accuracy más su parte de allocation F1.
+
+- **Datos de este portátil (P4)**: `train/` viene del tarball *lite*: `remittance_advices/` solo trae `index.csv`
+  (0 de 101.798 avisos; `docs_remit: 0 avisos leídos de 7319`) y `pdfs/` 50.960 de 74.431. En este portátil val
+  infravalora `docs_remit` y los segmentos de PDF (`ar_1toN_remittance` 0,6 %, `ar_short_dispute` 0 %): las notas
+  de val de P4 no son comparables con las de otro portátil. LIVE sí trae los avisos (13.796).
+- **Excepciones (P3)**: FX_DIFFERENCE recall 9 % (1.482 de 15.793 filas; F1 0,17: hasta +1,6 puntos);
+  SHORT_DISCOUNT recall 37 % (F1 0,54) y SHORT_WITHHOLDING recall 28 % (F1 0,43): casi todo lo predicho acierta
+  (P ≥ 0,98), falta cobertura. SHORT_DISPUTE 0 predichas (3.036): depende de `docs_remit` (ver punto anterior).
+- **Falsas excepciones por resolver** (filas con la excepción y golden sin ella o par inexistente):
+  OVERPAYMENT `text_ref` 266 (P 0,37); DUPLICATE_PAYMENT `amount_match` 352 (P 0,59); PARTIAL `text_ref` 1.173,
+  `short_cash` 616, `amount_match` 260; RETURNED `docs_dd` 112 en pares inexistentes.
+- **Cobros identificados sin casar (P1/P2)**: 8.674 movimientos acaban sin partida en `nonitem_unmatched` y el
+  golden sí trae partidas: 8.301 con IBAN, número citado o nombre de un cliente con partidas (salen
+  CUSTOMER_ADVANCE, sin excepción, para no restar en el macro-F1) y 372 UNIDENTIFIED. Por segmento (ejecución
+  1eed3ec): `ar_ref_noise` 2.500, `ar_1toN_text` 980, `ar_1toN_remittance` 952, `ar_short_dispute` 927,
+  `ar_n_to_m` 706, `ar_1toN_credit_note` 705, `ar_fx` 344; 2.780 citan el número de una partida abierta. Es el
+  mayor bloque de txn accuracy perdido (~1,3 puntos).
+- `subset_sum` (P2): 13.204 movimientos con acierto 61 % y 4.975 partidas equivocadas (la precisión de asignación
+  baja de 0,995 a 0,90). `ranker` (P1): 1.960 movimientos con acierto 9 % (1.716 pagos de varias facturas con una).
+- UNIDENTIFIED reales casados solo por importe (la trampa «lookalike» de POLICIES §3): `short_cash` 166,
+  `subset_sum` 48, `amount_match` 15. Exigir tercero antes de casar por importe los devolvería.
 
 El sample se inspeccionó durante desarrollo: sus resultados NO son una estimación independiente de
 generalización. No ajustar vocabulario ni umbrales para recuperar sus errores individuales. Cuando
@@ -101,6 +116,22 @@ UV_CACHE_DIR=/tmp/bankrec-uv-cache uv run --no-sync python scripts/eval.py --pha
 `eval.py` guarda `out/<fase>/metrics.json` y puede mostrar candidatas por referencia/importe en `--dump`.
 Son una ayuda al diagnóstico, no decisiones de conciliación ni saldos vivos reconstruidos por movimiento.
 El validador usa el scorer oficial, exige cobertura completa local y acepta sus variantes CSV para los avisos.
+
+**Checklist FINAL** (`submit.py`, CLAUDE.md pasos 3 y 6, sin golden): antes de archivar compara la ejecución con
+una de referencia del mismo commit (por defecto `out/live` para final, `out/val` para live) y marca CRITICO/AVISO:
+movimientos fuera de la ventana de la fase (no se enviarían), sociedades fuera del maestro (en FINAL deben venir en
+`masters_final`), fallback ≥ 1 %, resolvers con 0 movimientos o < 50 % de su cuota de referencia (caído en
+`prepare` o drift), caída > 5 puntos de movimientos con partida, filas por movimiento, cuota de cada excepción
+(clase perdida = hasta 2 puntos del macro-F1) y de UNIDENTIFIED, y sociedades/cuentas nuevas o con caída de casados
+(ZA01; cuenta nueva de cobros de IT01). No bloquea. `--check-only` lo muestra con la validación sin archivar:
+
+```
+uv run python scripts/submit.py out/final/submission.csv.gz --phase final --check-only
+```
+
+Probado: LIVE contra val (todo OK salvo aviso de 2 movimientos de ZA01 en LIVE, del 29-30/12, sin maestro en el
+repo) y LIVE con `docs_dd` simulado caído (CRITICO + fallback 2,7 %). En FINAL, ejecutar antes LIVE con el mismo
+commit para tener la referencia en `out/live`.
 
 `submit.py` valida, archiva una copia con hora UTC y hash SHA-256 completo, crea manifiesto JSON y añade
 un registro PREPARADO, NO ENVIADO al scoreboard. Solo imprime instrucciones de envío manual. Un fichero
