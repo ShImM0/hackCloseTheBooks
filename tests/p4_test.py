@@ -246,9 +246,33 @@ class UnmatchedDecisions(unittest.TestCase):
 
     def test_customer_refund_debits(self):
         self.assertEqual(self.decide(False, cli=[cand(aa=0, ab=0)])[:2], ('CUSTOMER_REFUND', ''))
-        self.assertIsNone(self.decide(False, cli=[cand(aa=1)]))                       # abono ARC abierto: partida
+        # ARC abiertas que no son de ese importe no impiden el reembolso (el ledger guarda ARC ya compensadas)
+        self.assertEqual(self.decide(False, cli=[cand(aa=1, arc=None)])[:2], ('CUSTOMER_REFUND', ''))
         self.assertIsNone(self.decide(False, cli=[cand(aa=0)], pro=[cand(pid='SES01000002')]))  # también proveedor
         self.assertIsNone(self.decide(False))
+
+    def test_credit_note_paid_out_needs_exact_open_arc(self):
+        f = feats(cli=[cand(aa=1, arc='ARC-2031-0000001')])
+        self.assertEqual(nonitem_unmatched.payout(f)[0], 'ARC-2031-0000001')
+        self.assertIsNone(nonitem_unmatched.payout(feats(cli=[cand(aa=1, arc=None)])))
+        self.assertIsNone(nonitem_unmatched.payout(feats(cli=[cand(aa=1, arc='ARC-2031-0000001')],
+                                                         pro=[cand(pid='SES01000002')])))   # también proveedor
+
+    def test_amount_below_smallest_invoice_is_unidentified(self):
+        self.assertEqual(self.decide(amt=50000, cli=[cand(min=40000)])[0], nonitem_unmatched.PENDING)
+        cat, exc, why = self.decide(amt=30000, cli=[cand(min=40000)])
+        self.assertEqual((cat, exc), ('UNIDENTIFIED', 'UNIDENTIFIED'))
+        self.assertIn('factura más pequeña', why)
+        ref = {'iid': 'ARI-2031-0000001', 'rs': 100, 'antes': True, 'pf': 0, 't': 'ARI', 'min': 40000}
+        self.assertEqual(self.decide(amt=30000, ref=ref)[0], 'UNIDENTIFIED')
+        self.assertEqual(self.decide(amt=40000, ref=ref)[0], nonitem_unmatched.PENDING)
+        self.assertEqual(self.decide(amt=30000, cli=[cand(min=None)])[0], nonitem_unmatched.PENDING)  # sin facturas
+
+    def test_supplier_refund_citing_invoice_despite_unrelated_open_credit_note(self):
+        sup = cand(pid='SES01000001', aa=1, ab=1, api=True, n='QUIMICA NUEVA')
+        self.assertEqual(self.decide(reemb=True, pro=[{**sup, 'apc': False}])[0], 'SUPPLIER_REFUND')
+        self.assertEqual(self.decide(reemb=True, pro=[{**sup, 'apc': True}])[0], nonitem_unmatched.PENDING)
+        self.assertEqual(self.decide(reemb=True, pro=[{**sup, 'api': False, 'apc': False}])[0], nonitem_unmatched.PENDING)
 
     def test_real_prepare_and_resolve_with_two_word_company(self):
         items = [{'item_id': 'ARI-2031-0000001', 'item_type': 'ARI', 'entity': 'XX01', 'party_id': 'CXX01000001',
