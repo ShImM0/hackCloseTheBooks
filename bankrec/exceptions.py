@@ -41,7 +41,7 @@ log = logging.getLogger("bankrec")
 KEY = "exceptions"
 # retención en origen en 1/10000 (125 = 1,25 %; 1000 = 10 %), por país del cliente
 WH_BPS = {"MX": (125, 1000), "BR": (150, 1000), "MA": (150, 1000)}
-GRACE_DAYS = 9   # POLICIES dice 3, pero en TRAIN los cobros multi-factura con descuento llegan hasta 9 días después
+GRACE_DAYS = 3   # POLICIES §3: 3 días de gracia. Con 9 la franja +4..+9 acertaba 1 de 3 en TRAIN (690 SD vs 1.536 PARTIAL); val igual (89,67)
 BC_MAX_EUR = 60.0
 BC_MAX_PCT = 0.02
 FX_BAND = (0.965, 1.02)          # efectivo/esperado de una liquidación total en otra divisa (tolerancia FX 3 %)
