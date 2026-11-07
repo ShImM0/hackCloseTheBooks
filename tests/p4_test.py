@@ -71,6 +71,22 @@ class Categories(unittest.TestCase):
         self.assertFalse(ctx.shared['nonitem'])
 
 
+    def test_south_africa_authorities(self):
+        # ZA01 (FINAL): SARS = agencia tributaria, UIF = seguro de desempleo. Textos ficticios.
+        for t, category in [
+            (txn('SARS VAT 202602', -100, 'NMSC'), 'TAX_PAYMENT'),
+            (txn('SARS EMP201 PAYE UIF SDL 2026-02', -100), 'TAX_PAYMENT'),
+            (txn('SARS VAT REFUND 202603', 100), 'TAX_REFUND'),
+            (txn('UIF CONTRIBUTION 202602', -100), 'SOCIAL_SECURITY'),
+        ]:
+            with self.subTest(text=t['text']):
+                self.assertEqual(nonitem.classify(t)[0], category)
+        # Abono sin devolución, sigla dentro de otra palabra o factura citada: sigue la cascada de partidas.
+        for t in [txn('SARS', 100), txn('UIF TRADING PAYMENT', 100), txn('SARSFIELD LOGISTICS', -100),
+                  txn('PAYMENT SARS INVOICE KWI-2026-001', -100)]:
+            with self.subTest(text=t['text']):
+                self.assertIsNone(nonitem.classify(t))
+
     def test_audited_patterns_and_pool_accounts(self):
         # Patrones auditados en 2023 y 2024 (reports/P4_HISTORY.md); números y entidades ficticios.
         for t, category in [

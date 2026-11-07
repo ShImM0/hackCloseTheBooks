@@ -71,7 +71,17 @@ def classify(txn: dict, pool: frozenset[str] = frozenset()) -> tuple[str, str] |
     elif hit(r"\bNOMINAS?\b|\bPAYROLL\b|SALARY PAYMENT"):
         if not credit:
             category = "PAYROLL"
-    elif hit(r"SEGURIDAD SOCIAL|SOCIAL CHARGES|\bURSSAF\b|SOZIALVERSICHERUNG|\bTGSS\b"):
+    elif hit(r"\bSARS\b"):
+        # Sudáfrica (ZA01 entra en FINAL, POLICIES §6): SARS es la agencia tributaria, como AEAT. Sin ejemplos en
+        # TRAIN ni LIVE (0 textos), así que no cambia val ni LIVE. Lo pagado a SARS (EMP201 incluye PAYE y UIF) es
+        # TAX_PAYMENT. Un abono solo es TAX_REFUND si dice devolución: una sigla corta puede ser un nombre de tercero
+        # (en TRAIN, «ATO OUTDOOR LIVING» es un cliente, no la agencia australiana).
+        if not credit:
+            category = "TAX_PAYMENT"
+        elif hit(r"\bREFUND\b|\bDEVOLUCION\b|\bREEMBOLSO\b|\bTERUGBETALING\b"):
+            category = "TAX_REFUND"
+    elif hit(r"SEGURIDAD SOCIAL|SOCIAL CHARGES|\bURSSAF\b|SOZIALVERSICHERUNG|\bTGSS\b|\bUIF\b"):
+        # UIF: Unemployment Insurance Fund de Sudáfrica (ZA01, FINAL); solo cargos, como el resto de cotizaciones.
         if not credit:
             category = "SOCIAL_SECURITY"
     elif hit(r"\bIMPUESTOS?\b|\bTAX (?:PAYMENT|REFUND)\b|\bVAT RETURN\b|DEVOLUCION (?:IVA|HACIENDA)|\bTAX AUTHORITY\b|\bDGFIP\b"
