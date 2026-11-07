@@ -148,7 +148,7 @@ def build(name: str, months: int | None = None) -> Phase:
         golden = golden.filter(pl.col("bank_txn_id").is_in(txns["bank_txn_id"].implode()))
     if name not in ("sample", "val"):
         golden = None
-    items = items.unique("item_id", keep="first")
+    items = items.unique("item_id", keep="first", maintain_order=True)   # orden estable: desempates reproducibles
     # POLICIES §5.7: la factura anulada y su abono de anulación nunca se liquidan por banco
     canc = items.filter((pl.col("item_type") == "ARC") & (pl.col("reason") == CANCEL_REASON))
     canc_inv = canc.select("entity", pl.col("related_document").alias("document_number")).unique()
