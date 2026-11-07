@@ -9,8 +9,8 @@ Fuente de verdad del reto: `bankrec-docs-and-masters/{README,FORMAT,POLICIES,DAT
 - 17 sociedades (15 países; ZA01 nueva en FINAL), 12 divisas, 13 bancos, 47 cuentas. Para cada movimiento
   bancario: qué partidas abiertas (ARI/ARC/API/APC) liquida y por qué importe; si no liquida ninguna, su category;
   excepción por fila (lista cerrada).
-- Fases: TRAIN 2021-07..2025-06 (con golden + `segment`), LIVE 2025-07..12 (ranking; 20 envíos/día, uno cada 3 min;
-  pedir upload-url gasta hueco), FINAL 2026-01..06 (datos a las 18:00, **un único envío puntuado**, cierre 19:30;
+- Fases: TRAIN 2021-07..2025-06 (con golden + `segment`), LIVE 2025-07..12 (ranking; **ya sin límite
+  de envíos**), FINAL 2026-01..06 (datos a las 18:00, **un único envío puntuado**, cierre 19:30;
   un fichero rechazado por validación no cuenta y se puede resubir; empate → gana el envío más temprano; revelación 20:30).
 - Nota = 100 × (0,5·Allocation F1 + 0,3·Txn accuracy + 0,2·Exception macro-F1). Tolerancia |Δ| ≤ max(0,01; 0,5 %).
   - Allocation F1: pares (txn, item) con importe en tolerancia. No mira la excepción.
@@ -174,8 +174,17 @@ Val (TRAIN 2025-01..06) es una aproximación optimista, no el objetivo.
 - Mira P y R por separado y el informe por segmento, no solo la nota: una subida global que hunde otro segmento
   suele ser sobreajuste.
 - Iterar con `--months 1` o `--months 2` y confirmar con los 6 meses completos antes de push.
-- Árbitro externo: LIVE (P4 envía, 20/día). Si val sube y LIVE no, desconfía del cambio. Apunta las dos notas
+- Árbitro externo: LIVE, ya sin límite de envíos. Si val sube y LIVE no, desconfía del cambio. Apunta las dos notas
   en `docs/SCOREBOARD.md`.
+- **Ciclo de envíos sin límite**:
+  - **Un cambio por envío**, siempre desde un commit de main con su val anotada. Si un envío mezcla dos cambios, no
+    se sabe cuál funcionó.
+  - **LIVE confirma, no se optimiza contra él.** No ajustes umbrales a base de reenviar a LIVE: FINAL es otro semestre
+    y con drift. Una mejora debe subir val y LIVE a la vez.
+  - **Si LIVE baja de forma consistente con un cambio, se revierte** aunque val suba.
+  - **Comparar contenido, no ficheros**: dos portátiles con el mismo commit deben dar el mismo SHA-256 del CSV
+    descomprimido.
+    `uv run python -c "import gzip,hashlib,sys;print(hashlib.sha256(gzip.open(sys.argv[1]).read()).hexdigest())" <fichero>`
 - Sesgo conocido de val (optimista): el conjunto de partidas abiertas excluye las cerradas fuera de banco en
   2025-H1, y los maestros son una foto de 2025-12-31 (nombres e IBAN "del futuro" respecto a val).
 
