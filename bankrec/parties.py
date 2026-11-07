@@ -65,7 +65,15 @@ def prepare(ctx) -> None:
         for ib in ibans_of.get(parent, ()):
             iban[ib].add(child)
     # nombres de < 5 letras ("SOL") encajan con cualquier palabra del concepto: fuera
-    ctx.shared["parties"] = {"names": {k: [n for n in v if len(n) >= 5] for k, v in names.items()}, "iban": iban}
+    names = {k: [n for n in v if len(n) >= 5] for k, v in names.items()}
+    # índice inverso palabra -> terceros, para buscar el tercero sin conocer la partida (find)
+    words: dict[str, set[str]] = defaultdict(set)
+    for pid, ns in names.items():
+        for n in ns:
+            for w in n.split():
+                if len(w) >= 4:
+                    words[w].add(pid)
+    ctx.shared["parties"] = {"names": names, "iban": iban, "words": words}
 
 
 def context(txn: dict) -> dict:
@@ -87,3 +95,21 @@ def score(tctx: dict, party_id: str, ctx) -> float:
         if len(n) > 16:  # el banco corta el nombre a 16-20 caracteres
             best = max(best, 0.95 * fuzz.partial_ratio(n[:16], hay))
     return best
+
+
+WORD_DF_MAX = 60   # palabras compartidas por más terceros ("POOL", "SUPPLY") no sirven para buscar
+
+
+def find(tctx: dict, ctx, prefix: str = "") -> list[tuple[str, float]]:
+    """Terceros candidatos del movimiento (IBAN o palabras poco frecuentes del nombre), con su score, de mayor a
+    menor. prefix filtra por id (p. ej. "CES01" = clientes de ES01)."""
+    P = ctx.shared["parties"]
+    pids = set()
+    for ib in tctx["ibans"]:
+        pids |= P["iban"].get(ib, set())
+    for w in set(tctx["hay"].split()):
+        ps = P["words"].get(w)
+        if ps and len(ps) <= WORD_DF_MAX:
+            pids |= ps
+    out = [(p, score(tctx, p, ctx)) for p in pids if p.startswith(prefix)]
+    return sorted(out, key=lambda x: -x[1])

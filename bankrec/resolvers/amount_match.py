@@ -21,8 +21,53 @@ MARGIN = 5         # ventaja mínima del mejor tercero sobre el segundo
 PAYMENT_FACTORY = {"ES00": ("ES00", "ES01", "ES02", "PT01")}
 
 
+PARTY_STRONG = 90  # by_ratio: el tercero tiene que estar claro
+MAX_OPEN = 30      # by_ratio: terceros con muchas partidas abiertas (tarjeta web) dan coincidencias espurias
+RATIOS = (1 / 2, 1 / 3, 1 / 4, 0.9, 0.985, 0.9875)   # plazos 1/2-1/4, retenciones 10 %, 1,5 %, 1,25 % (§3)
+
+
 def prepare(ctx) -> None:
+    """ctx.shared[NAME] = {by_party: party -> [ARI abiertas, FIFO], disc: item -> 1 - % descuento pronto pago}."""
+    import polars as pl
     parties.prepare(ctx)
+    it = ctx.items.filter((pl.col("open_cents") > 0) & (pl.col("item_type") == "ARI")).sort("issue_date", "item_id")
+    by_party: dict[str, list[str]] = {}
+    for iid, pid in it.select("item_id", "party_id").iter_rows():
+        by_party.setdefault(pid, []).append(iid)
+    pt = ctx.master("payment_terms")
+    pct = {c: float(x) for c, x in pt.select("code", "early_payment_discount_pct").iter_rows() if x}
+    disc = {iid: 1 - pct[t] / 100 for iid, t in it.select("item_id", "payment_terms").iter_rows() if t in pct}
+    ctx.shared[NAME] = {"by_party": by_party, "disc": disc}
+
+
+def by_ratio(txn: dict, ctx, ledger) -> Proposal | None:
+    """Cobro sin referencia ni importe exacto (§3: plazos, retención, pronto pago): tercero claro y UNA sola de sus
+    partidas abiertas cuyo saldo × ratio típico == efectivo (tolerancia 0,5 %). Importe/excepción: exceptions.py."""
+    cents = txn["amount_cents"]
+    if cents <= 0 or NAME not in ctx.shared:
+        return None
+    cur, amt = txn["currency"], cents
+    if txn.get("orig_currency") and txn["orig_currency"] != cur and txn.get("orig_amount_cents"):
+        cur, amt = txn["orig_currency"], abs(txn["orig_amount_cents"])
+    found = parties.find(parties.context(txn), ctx, "C" + txn["entity"])
+    if not found or found[0][1] < PARTY_STRONG or (len(found) > 1 and found[1][1] > found[0][1] - MARGIN):
+        return None
+    S = ctx.shared[NAME]
+    items = [i for i in S["by_party"].get(found[0][0], ()) if ledger.open.get(i, 0) > 0
+             and ledger.info[i][2] == cur and (ledger.info[i][4] is None or ledger.info[i][4] <= txn["booking_date"])]
+    if not items or len(items) > MAX_OPEN:
+        return None
+    hits = []
+    for i in items:
+        oc = ledger.open[i]
+        rs = RATIOS + ((S["disc"][i],) if i in S["disc"] else ())
+        if any(abs(amt - r * oc) <= max(1, 0.005 * r * oc) for r in rs):
+            hits.append(i)
+    if len(hits) != 1:
+        return None
+    i = hits[0]
+    return Proposal(txn["bank_txn_id"], [Alloc(i, ledger.open[i])], confidence=0.8,
+                    reason=f"tercero {found[0][0]} ({found[0][1]:.0f}) + ratio típico sobre saldo")
 
 
 def candidates(txn: dict, ledger) -> list[str]:
@@ -59,6 +104,8 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     if p is None:
         from bankrec.resolvers import text_ref
         p = text_ref.by_ref(txn, ctx, ledger)
+    if p is None:
+        p = by_ratio(txn, ctx, ledger)
     return p
 
 
