@@ -4,8 +4,9 @@ POLICIES §5.3: un depósito de cheques/lockbox liquida los cheques de `cheque_d
 devuelto o un contracargo de tarjeta reabre la partida (importe reabierto, positivo).
 - cheque_matches: abono = `deposit_total` de un depósito (misma cuenta, fecha de depósito..+5 días, importe exacto).
   Cada cheque -> ARI de la entidad de la cuenta: tercero por nombre del librador (`drawer`, = nombre del cliente
-  normalizado) y, dentro del tercero, la factura cuyo número encaja con `stub_reference` (refs.ref_score) o cuyo
-  saldo/total es el importe del cheque; sin tercero, solo si el número impreso es inequívoco y el importe cuadra.
+  normalizado por parties o completo, para nombres cortos como "Spa Font SARL") y, dentro del tercero, la factura cuyo
+  número encaja con `stub_reference` (refs.ref_score) o cuyo saldo/total es el importe del cheque (si el talón trae número, solo por
+  número: exacto, sin prefijo o cortado); sin tercero (o sin factura suya), solo si el número impreso completo es inequívoco en la entidad y el importe cuadra.
 - chargebacks: cargo con "****NNNN" (últimos 4 de la tarjeta) y comercio de 9 dígitos -> pedido de card_settlements con
   esa tarjeta, ese comercio y bruto == importe -> su ARI con RETURNED.
 Entradas: ctx (bankrec.phase.Phase). Salida: dict bank_txn_id -> list[(item_id | None, cents, exception)].
@@ -17,6 +18,7 @@ import re
 from collections import defaultdict
 
 import polars as pl
+from unidecode import unidecode
 
 from bankrec import config, load, parties, refs
 
@@ -41,31 +43,70 @@ def _read(ctx, sub: str, date_col: str, lookback: dt.timedelta) -> pl.DataFrame:
     return pl.concat(parts, how="vertical_relaxed") if parts else pl.DataFrame()
 
 
+def _full_key(s: str | None) -> str:
+    """Nombre completo sin acentos, signos ni espacios: 'SCS Spa EURL' -> 'SCSSPAEURL'. A diferencia de
+    parties.norm_name no quita formas jurídicas: 'Spa Blue SAS' se queda en 'BLUE' (< 5 letras, sin índice)."""
+    return re.sub(r"[^A-Z0-9]", "", unidecode(s or "").upper())
+
+
 def _index(ctx) -> dict:
-    """Índices de partidas ARI: por tercero y nombre de tercero -> terceros (se construye una vez por fase)."""
+    """Índices de partidas ARI: por tercero, nombre de tercero -> terceros y (entidad, cifras del nº) -> partidas
+    (se construye una vez por fase)."""
     if "docs_card_idx" in ctx.shared:
         return ctx.shared["docs_card_idx"]
     parties.prepare(ctx)
     by_party: dict[str, list] = defaultdict(list)
+    by_doc: dict[tuple, list] = defaultdict(list)
     ari = ctx.items.filter(pl.col("item_type") == "ARI").select(
         "item_id", "entity", "party_id", "document_number", "currency", "total_cents", "open_cents", "issue_date")
     for r in ari.iter_rows():
         if r[2]:
             by_party[r[2]].append(r)
+        d = refs.digits(r[3])
+        if len(d) >= 6:
+            by_doc[(r[1], d)].append(r)
     names: dict[str, set[str]] = defaultdict(set)
     for pid, ns in ctx.shared["parties"]["names"].items():
         if pid in by_party:
             for n in ns:
                 names[n].add(pid)
-    ctx.shared["docs_card_idx"] = {"by_party": by_party, "names": names}
+    # nombre completo (maestro actual, comercial e impreso en las facturas): cubre los nombres cortos que
+    # norm_name deja en < 5 letras ("Spa Font SARL" -> "FONT") y que el índice de parties descarta
+    full: dict[str, set[str]] = defaultdict(set)
+    cust = ctx.master("customers").select("customer_id", "name", "trade_name")
+    pairs = [(r[0], n) for r in cust.iter_rows() for n in r[1:] if n]
+    pairs += ctx.items.filter(pl.col("item_type") == "ARI").select("party_id", "party_name").unique().rows()
+    for pid, n in pairs:
+        k = _full_key(n)
+        if pid in by_party and len(k) >= 5:
+            full[k].add(pid)
+    ctx.shared["docs_card_idx"] = {"by_party": by_party, "names": names, "full": full, "by_doc": by_doc}
     return ctx.shared["docs_card_idx"]
+
+
+def _by_number(cheque: dict, ent: str, idx: dict) -> str | None:
+    """Sin tercero reconocible: la única ARI de la entidad cuyo nº impreso (todas sus cifras, >= 6) es el del talón y
+    cuyo saldo o total es el importe del cheque (POLICIES §5.3; nº e importe a la vez, nunca uno solo)."""
+    d = refs.digits(cheque.get("stub_reference"))
+    if len(d) < 6:
+        return None
+    cents = cheque["amount_cents"]
+    hit = [it for it in idx.get("by_doc", {}).get((ent, d), ())
+           if cents in (it[6], it[5]) and not (it[4] and cheque.get("currency") and it[4] != cheque["currency"])]
+    return hit[0][0] if len(hit) == 1 else None
 
 
 def _pick(cheque: dict, ent: str, idx: dict) -> str | None:
     """Partida de un cheque: tercero por nombre del librador + número de la factura / importe."""
     cents = cheque["amount_cents"]
     toks = refs.tokens((cheque.get("stub_reference") or "").upper())
-    pids = idx["names"].get(parties.norm_name(cheque.get("drawer")), ())
+    # talón con número (>= 6 cifras): cita SU factura; si ninguna del tercero encaja (exacto, sin prefijo o cortado,
+    # ref >= 85), no se adivina por importe ni por errata. Offline: esas elecciones eran 0 de 9 (2025-H1) y 1 de 10
+    # (2024-H1) correctas; la factura citada suele estar anulada o fuera de las partidas.
+    strict = len(refs.digits(cheque.get("stub_reference"))) >= 6
+    pids = set(idx["names"].get(parties.norm_name(cheque.get("drawer")), ())) | idx.get("full", {}).get(_full_key(cheque.get("drawer")), set())
+    if not pids:
+        return _by_number(cheque, ent, idx)
     best, best_key, best_pid, rival = None, None, None, False
     for pid in pids:                     # varios terceros pueden compartir nombre (sucursales): decide el nº y el importe
         for it in idx["by_party"][pid]:
@@ -73,14 +114,16 @@ def _pick(cheque: dict, ent: str, idx: dict) -> str | None:
                 continue
             ref = refs.ref_score(it[3], toks)
             amt = int(cents in (it[6], it[5]))
-            if ref < 75 and not amt:
+            if (ref < 75 and not amt) or (strict and ref < 85):
                 continue
             key = (ref >= 85, amt and it[6] > 0, amt, ref, -(it[7].toordinal() if it[7] else 0))
             if best_key is None or key > best_key:
                 best, best_key, best_pid, rival = it[0], key, pid, False
             elif key[:4] == best_key[:4] and pid != best_pid:
                 rival = True             # dos terceros distintos empatan en número e importe: no se decide
-    return None if rival else best
+    if rival:
+        return None
+    return best if best is not None else _by_number(cheque, ent, idx)
 
 
 def cheque_matches(ctx) -> dict[str, list]:
