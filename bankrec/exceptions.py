@@ -32,6 +32,7 @@ Módulos de apoyo propios: bankrec/exceptions_oracle.py (mide solo esta etapa co
 from __future__ import annotations
 
 import bisect
+import re
 import logging
 
 from bankrec.contract import Alloc, Proposal
@@ -51,9 +52,13 @@ INVOICES = ("ARI", "API")
 # run. En val, las 1.140 filas DUPLICATE_PAYMENT de estos resolvers eran todas falsas (otro movimiento había consumido
 # antes la partida por error): con saldo 0, la fila va sin excepción por el importe del documento.
 DOC_RESOLVERS = {"docs_remit", "docs_dd", "docs_card", "docs_ap"}
+# resolvers que asignan solo una parte del cobro (las citadas inequívocas): el exceso es el resto de facturas no
+# encontradas, nunca un sobrepago (POLICIES §3 OVERPAYMENT exige partida liquidada con exceso del mismo pago)
+INCOMPLETE_RESOLVERS = {"multi_ref_cited"}
 
 
 OVERPAY_UNITS = 100   # exceso en unidades enteras: en TRAIN 2021-2025 los OVERPAYMENT llevan +1..+100 unidades exactas
+_SETTLE_RE = re.compile(r"\bREGULARIZACION\b|\bSETTLEMENT\b", re.I)   # regularización de disputa (paso 0 del defecto)
 
 
 def overpay_shape(c: int, o: int) -> bool:
@@ -304,6 +309,10 @@ def finalize(prop: Proposal, txn: dict, ctx, ledger) -> Proposal | None:
             if info[3] != tc and info[0] in INVOICES and a.exception in ("", "SHORT_DISCOUNT", "SHORT_WITHHOLDING", "SHORT_BANK_CHARGES",
                                                        "OVERPAYMENT"):
                 a.exception = "FX_DIFFERENCE"
+    if prop.resolver in INCOMPLETE_RESOLVERS:
+        for a in out:
+            if a.exception == "OVERPAYMENT":
+                a.exception = ""
     prop.allocs = out
     return prop
 
@@ -452,6 +461,15 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0, doc=False)
         return out
 
     # ---- efectivo < esperado: explicar el defecto delta
+    # 0. regularización de una disputa (POLICIES §3 SHORT_DISPUTE: la liquidación acordada cierra la disputa): el
+    #    cobro "SETTLEMENT"/"REGULARIZACION" de una sola factura se aplica por el efectivo, sin excepción (FX_DIFFERENCE
+    #    fuera si va en otra divisa). TRAIN 2021-2025: 5.125 movimientos con ese texto, todos 1 partida, "" (4.578,
+    #    importe = efectivo en el 100 %) o FX_DIFFERENCE (547); nunca PARTIAL. "CARD SETTLEMENT" es la liquidación de tarjetas.
+    if len(live) == 1 and not live_cn and not closed and _SETTLE_RE.search(txn.get("text") or "") \
+            and "CARD SETTLEMENT" not in (txn.get("text") or "").upper():
+        i = live[0]
+        out[i] = Alloc(rows[i][0].item_id, cash, "")
+        return out
     # 1. hechos del PDF (retención de garantía, anticipo, plazos): parcial de esa partida
     for i in live:
         f = st.item_facts(rows[i][0].item_id)
