@@ -37,10 +37,10 @@ Fuente de verdad del reto: `bankrec-docs-and-masters/{README,FORMAT,POLICIES,DAT
 
 | Rol | Ficheros |
 |---|---|
-| P1 core | `bankrec/{config,contract,load,phase,ledger,refs,parties,pipeline,registry}.py`, `bankrec/resolvers/{text_ref,amount_match,ranker}.py`, `scripts/run_phase.py`, `scripts/smoke.py`, `CLAUDE.md` |
-| P2 documentos | `bankrec/resolvers/{docs_dd,docs_card,docs_remit,docs_ap,multi_ref,subset_sum}.py` |
-| P3 PDFs/excepciones | `bankrec/{pdf_text,pdf_facts,exceptions}.py` |
-| P4 QA/envíos | `bankrec/resolvers/{nonitem,router}.py`, `bankrec/validate.py`, `scripts/{eval,submit}.py`, `reports/`, `docs/SCOREBOARD.md` |
+| P1 core | `bankrec/{config,contract,load,phase,ledger,refs,parties,pipeline,registry}.py`, `bankrec/resolvers/{text_ref,amount_match,multi_ref_fill,ranker}.py`, `scripts/run_phase.py`, `scripts/smoke.py`, `CLAUDE.md` |
+| P2 documentos | `bankrec/resolvers/{docs_dd,docs_card,docs_card_chq,docs_remit,docs_remit_parse,docs_ap,multi_ref,subset_sum}.py` |
+| P3 PDFs/excepciones | `bankrec/{pdf_text,pdf_facts,exceptions,exceptions_amounts,exceptions_oracle}.py`, `docs/P3_NOTES.md` |
+| P4 QA/envíos | `bankrec/resolvers/{nonitem,nonitem_unmatched,router}.py`, `bankrec/validate.py`, `scripts/{eval,submit,p4_run,p4_category_audit}.py`, `tests/`, `reports/`, `docs/SCOREBOARD.md` |
 
 Compartidos (`contract.py`, `pipeline.py`, `registry.py`, `CLAUDE.md`): solo P1. Para un cambio, pídelo.
 Ficheros nuevos propios (helpers, tests) sí: ponles tu prefijo de módulo (p. ej. `bankrec/resolvers/docs_dd_parse.py`).
@@ -179,25 +179,61 @@ Val (TRAIN 2025-01..06) es una aproximación optimista, no el objetivo.
 - Sesgo conocido de val (optimista): el conjunto de partidas abiertas excluye las cerradas fuera de banco en
   2025-H1, y los maestros son una foto de 2025-12-31 (nombres e IBAN "del futuro" respecto a val).
 
-## Si eres P2 / P3 / P4, empieza por…
+## Estado y siguientes pasos por rol (15:30, tras el envío #7)
 
-**P2 (documentos y agregados 1:N)**
-1. `docs_dd.py`: abono de remesa ↔ `direct_debit_batches` (cuenta, fecha, batch_total) → todos los recibos;
-   recibo → partida (`end_to_end_id`/`remittance_info`/mandato). Segmento `ar_dd_batch` (713 k pares).
-   Después devoluciones R → RETURNED (`ar_dd_returned`).
-2. `docs_ap.py`: cargos ↔ `payment_runs` (transfers por end_to_end_id, aggregated/confirming por total y fecha).
-   Segmentos `ap_payment_multi`, `ap_payment_single`, `ap_credit_note_netted`, `ap_paid_by_holding`, `ap_confirming`.
-3. `docs_card.py` (`ar_card_settlement`) y cheques; luego `docs_remit.py` (`ar_1toN_remittance`, `ar_short_dispute`).
+**Dónde estamos**
+- **LIVE #7** (`c21c984`): **84,12**, la mejor nota hasta ahora.
+  - Allocation F1 85,5 % (P 94,8 / R 77,8), txn accuracy 92,2 %, exception macro-F1 68,7 %.
+  - Val de ese mismo código: 85,73. LIVE queda entre 1 y 1,6 puntos por debajo de val, de forma estable.
+- **main `db706c6`**: val **87,96** (P 0,955 · R 0,853 · txnAcc 0,934 · excF1 0,746).
+  - Añade sobre #7 el `docs_ap` FX de P2 y `1d8f290` de P4.
+  - Candidato a envío #8: `out/live/candidato_live_1524_db706c6.csv.gz`.
 
-**P3 (PDFs y excepciones)**
-1. `exceptions.py`: SHORT_DISCOUNT (payment_terms + 3 días de gracia, cash = total − % × total), FX_DIFFERENCE
-   (divisa del movimiento ≠ divisa de la partida), PARTIAL (aplicado < saldo). Son ~300 k filas de TRAIN.
-2. `pdf_text.py`: texto de `pdfs/index.csv` a parquet en caché (multiproceso, mide tiempo en LIVE).
-3. `pdf_facts.py`: plazos, retención, anticipo, "anula y sustituye", mes de servicio, IBAN nuevo, cesión →
-   segmentos `ar_instalment`, `ar_retention*`, `ar_replaced_invoice`, `ar_advance_deduction`, `ar_new_iban`.
+**Dónde quedan los puntos** (val de `db706c6`; cada clase de excepción vale 2 puntos)
 
-**P4 (categorías, QA, envíos)**
-1. Enviar a mano `out/live/starter.csv.gz` (baseline) y apuntar la nota en `docs/SCOREBOARD.md`.
-2. `nonitem.py`: categorías por bank_code/texto (BANK_FEES 70 k, CASH_POOL 12,5 k, PAYROLL…); UNIDENTIFIED solo
-   para cobros sin partida (es una clase del macro-F1: el fallback actual la sobre-predice).
-3. `eval.py`/`validate.py`: informe por segmento, `--dump` con candidatas; checklist FINAL en `submit.py`.
+| Problema | Tamaño | Dueño |
+|---|---|---|
+| `subset_sum`: 51 k pares, solo el 51 % correctos | ~25 k pares falsos, el 85 % de todos los falsos | P2 |
+| DUPLICATE_PAYMENT, F1 0,44 (P 0,28) | `docs_remit` 1.117 + `docs_ap` 297 filas falsas, ninguna correcta | P2, con P3 |
+| FX_DIFFERENCE, F1 0,32 (R 0,19) | 12,7 k filas golden en `ar_fx`, cobros de 20-60 facturas sin aviso | P2 (`docs_remit`), P3 |
+| Pares sin predecir | `ar_ref_noise` 24,6 k · `ar_short_dispute` 23,6 k · `ar_1toN_credit_note` 19,2 k · `ar_fx` 13,3 k · `ar_1toN_text` 9,6 k · `ar_n_to_m` 4,5 k · `ar_1toN_remittance` 4,4 k | P2 |
+| OVERPAYMENT F1 0,57 · PARTIAL 0,84 · UNIDENTIFIED 0,89 | — | P3, P4 |
+| `multi_ref_fill`: 84 % de precisión | 1,6 k pares falsos | P1 |
+
+**P2**
+1. `subset_sum`: subir la precisión del 51 % a ≥ 90 % sin perder mucho recall.
+   - Aceptar solo una solución única, un tercero claro (≥ 90), pocas candidatas y una ventana de fechas corta.
+   - Si no está claro, devolver None.
+   - Es lo que más vale: más de 1 punto.
+2. `docs_remit` y `docs_ap`: no asignar partidas que ya están cerradas.
+   - Son 1.414 filas DUPLICATE_PAYMENT falsas.
+   - Corregirlo sube esa clase de 0,44 a unos 0,85: ≈ +0,8.
+3. Cobertura de avisos.
+   - Hay 6.883 avisos y 6.304 abonos casados.
+   - En `ar_short_dispute` faltan 23,6 k pares y en `ar_fx` 13,3 k: revisar los avisos que no casan y los cobros FX con aviso.
+4. `ar_1toN_credit_note`: facturas menos abonos (`multi_ref`/`subset_sum` con ARC).
+
+**P3**
+1. Con P2: una partida con saldo 0 que llega por un aviso o un payment run no es DUPLICATE_PAYMENT.
+   Marcar DUPLICATE_PAYMENT solo si el resolver lo fija (lo hace `amount_match.duplicate`: 649 de 889 correctas).
+2. OVERPAYMENT (P 0,60) y PARTIAL (P 0,90): revisar los falsos con `eval.py --dump` en `ar_overpayment` y `ar_instalment`.
+3. FX_DIFFERENCE: comprobar que toda fila de factura asignada en otra divisa la lleva; los abonos no la llevan.
+
+**P4**
+1. Enviar el candidato #8 y anotarlo con su SHA-256.
+   - Regla: un solo cambio por envío y siempre desde un commit de main medido en val.
+2. Ensayo de respaldo de FINAL con `--phase live` en su portátil.
+   - Mismo commit que P1; el SHA-256 debe coincidir con el de P1.
+3. `1d8f290` restó 0,10 en val (precisión 0,954 → 0,951): revisar «ARC pagada por transferencia».
+4. `unidentified` (acierto 0,87) y `unidentified_lookalike` (0,82) con `eval.py --dump`.
+
+**P1**
+1. Integrar y medir en val cada push antes de cada envío. Mantener `docs/SCOREBOARD.md`.
+2. 17:45: congelar main. 18:00: FINAL según la guía de pasos.
+3. `multi_ref_fill`: subir su precisión (84 %).
+4. `amount_match`: revisar sus 466 pares falsos en `ar_same_amount_fifo` y `ar_1to1`.
+
+**Reglas hasta el final**
+- Commit y push por subtarea terminada, con smoke en verde.
+- Toda mejora se anota en el scoreboard con su val antes y después.
+- Después de las 17:45 solo entra lo que P1 haya medido.
