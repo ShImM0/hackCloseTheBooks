@@ -73,13 +73,17 @@ def prepare(ctx) -> None:
             for w in n.split():
                 if len(w) >= 4:
                     words[w].add(pid)
-    ctx.shared["parties"] = {"names": names, "iban": iban, "words": words}
+    exact: dict[str, set[str]] = defaultdict(set)
+    for pid, ns in names.items():
+        for n in ns:
+            exact[n].add(pid)
+    ctx.shared["parties"] = {"names": names, "iban": iban, "words": words, "exact": exact}
 
 
 def context(txn: dict) -> dict:
     """Lo que se compara una vez por movimiento."""
     hay = refs.haystack(txn)
-    return {"hay": norm_name(hay), "ibans": refs.ibans(txn)}
+    return {"hay": norm_name(hay), "ibans": refs.ibans(txn), "cp": norm_name(txn.get("counterparty_name"))}
 
 
 def score(tctx: dict, party_id: str, ctx) -> float:
@@ -97,7 +101,7 @@ def score(tctx: dict, party_id: str, ctx) -> float:
     return best
 
 
-WORD_DF_MAX = 60   # palabras compartidas por más terceros ("POOL", "SUPPLY") no sirven para buscar
+WORD_DF_MAX = 200  # palabras compartidas por más terceros ("POOL", "SUPPLY") no sirven para buscar
 
 
 def find(tctx: dict, ctx, prefix: str = "") -> list[tuple[str, float]]:
@@ -107,6 +111,7 @@ def find(tctx: dict, ctx, prefix: str = "") -> list[tuple[str, float]]:
     pids = set()
     for ib in tctx["ibans"]:
         pids |= P["iban"].get(ib, set())
+    pids |= P.get("exact", {}).get(tctx.get("cp", ""), set())
     for w in set(tctx["hay"].split()):
         ps = P["words"].get(w)
         if ps and len(ps) <= WORD_DF_MAX:

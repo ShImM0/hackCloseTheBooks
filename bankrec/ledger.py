@@ -32,6 +32,7 @@ class Ledger:
         cols = ["item_id", "item_type", "entity", "currency", "party_id", "issue_date", "document_number", "po"]
         self.info = {r[0]: r[1:] for r in items.select(cols).iter_rows()}
         self.by_amount: dict[tuple, list[str]] = defaultdict(list)
+        self.closed_by_amount: dict[tuple, list[tuple]] = defaultdict(list)
         for iid, oc in self.open.items():
             if oc > 0:
                 self.by_amount[self._key(iid, oc)].append(iid)
@@ -66,14 +67,22 @@ class Ledger:
             lst.insert(bisect.bisect(keys, self._fifo(iid)), iid)
         self.open[iid] = new
 
-    def apply(self, p: Proposal) -> None:
+    def apply(self, p: Proposal, when=None) -> None:
+        """when = fecha del movimiento: las partidas que cierra quedan en closed_by_amount (DUPLICATE_PAYMENT)."""
         for a in p.allocs:
             if a.item_id not in self.open:
                 continue
+            old = self.open[a.item_id]
             if a.exception == "RETURNED":
-                self._set(a.item_id, self.open[a.item_id] + a.amount_cents)
+                self._set(a.item_id, old + a.amount_cents)
             elif a.exception != "DUPLICATE_PAYMENT":
-                self._set(a.item_id, max(0, self.open[a.item_id] - a.amount_cents))
+                self._set(a.item_id, max(0, old - a.amount_cents))
+                if when is not None and old > 0 and self.open[a.item_id] == 0:
+                    self.closed_by_amount[self._key(a.item_id, old)].append((a.item_id, when))
+
+    def closed_with(self, entity: str, currency: str, cents: int) -> list[tuple[str, object]]:
+        """(item_id, fecha de cierre) de partidas cerradas en esta fase cuyo último saldo era `cents`."""
+        return [(i, d) for i, d in self.closed_by_amount.get((entity, currency, cents), []) if self.open.get(i, 0) == 0]
 
 
 def open_at(items: pl.DataFrame, golden: pl.DataFrame, txns: pl.DataFrame, cutoff,
