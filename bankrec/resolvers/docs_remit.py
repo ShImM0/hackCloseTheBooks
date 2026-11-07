@@ -67,20 +67,25 @@ def _nref(s) -> str:
 
 
 def _parse_all(paths: list[str]) -> list:
-    """Parseo en paralelo por lotes de 64 ficheros. Si un worker muere (p. ej. sin memoria con otros procesos
-    pesados: BrokenProcessPool), los lotes que faltan se leen en serie, sin repetir los que ya se leyeron."""
+    """Parseo en paralelo por lotes de 64 ficheros. En esta máquina un worker muere a veces sin motivo reproducible
+    (BrokenProcessPool; el resto da WinError 6): se reintenta con un pool nuevo solo lo que falta y, si vuelve a
+    fallar, el resto se lee en serie, sin repetir los lotes ya leídos."""
     chunks = [paths[i:i + 64] for i in range(0, len(paths), 64)]
     done: list = [None] * len(chunks)
-    try:
-        with ProcessPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as ex:
-            futs = {ex.submit(P.parse_many, ch): k for k, ch in enumerate(chunks)}
-            for f in as_completed(futs):
-                try:
-                    done[futs[f]] = f.result()
-                except Exception:
-                    pass
-    except Exception:
-        log.exception("docs_remit: lectura en paralelo falló")
+    for _ in range(2):
+        todo = [k for k, d in enumerate(done) if d is None]
+        if not todo:
+            break
+        try:
+            with ProcessPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as ex:
+                futs = {ex.submit(P.parse_many, chunks[k]): k for k in todo}
+                for f in as_completed(futs):
+                    try:
+                        done[futs[f]] = f.result()
+                    except Exception:
+                        pass
+        except Exception:
+            log.exception("docs_remit: lectura en paralelo falló")
     redo = [k for k, d in enumerate(done) if d is None]
     if redo:
         log.warning("docs_remit: %d de %d lotes de avisos se leen en serie", len(redo), len(chunks))
