@@ -56,6 +56,7 @@ _SLACK = 7                          # días entre la ejecución y el cargo en ba
 _CF_EXTRA = 6                       # confirming: beneficiarios de más en el pool que se pueden descartar por suma
 _CF_COMBOS = 1_000_000              # ... si las combinaciones posibles no pasan de esto (riesgo de una suma casual única)
 _CF_DAYS = 3                        # confirming: vencimiento en fin de semana/festivo -> cargo el siguiente día hábil
+_PARTIAL_TOL = 2                    # céntimos: por debajo del saldo vivo en más de esto = pago parcial
 _FX_BAND = 0.03                     # §3: el cambio del banco queda "well within the 3 % FX tolerance"
 
 
@@ -469,19 +470,33 @@ def _subset(pool: list, n: int, amt: int, booking: dt.date) -> list | None:
     return best
 
 
+def _run_proposal(t: str, rows: list) -> Proposal | None:
+    allocs, seen, miss = [], set(), 0
+    for item, cents in rows:
+        if item is None or item in seen:
+            miss += 1
+            continue
+        seen.add(item)
+        allocs.append(Alloc(item, cents))
+    if not allocs:
+        return None
+    return Proposal(t, allocs, confidence=0.95 if not miss else 0.7, resolver=NAME,
+                    reason=f"payment_run {len(rows)} docs, {miss} sin partida")
+
+
 def resolve_batch(ctx) -> dict[str, Proposal]:
     out = {}
-    for t, rows in ctx.shared.get(NAME, {}).get("by_txn", {}).items():
-        allocs, seen, miss = [], set(), 0
-        for item, cents in rows:
-            if item is None or item in seen:
-                miss += 1
-                continue
-            seen.add(item)
-            allocs.append(Alloc(item, cents))
-        if allocs:
-            out[t] = Proposal(t, allocs, confidence=0.95 if not miss else 0.7, resolver=NAME,
-                              reason=f"payment_run {len(rows)} docs, {miss} sin partida")
+    sh = ctx.shared.get(NAME, {})
+    # cargos cuyas partidas van en varias divisas: se resuelven en resolve(), con el saldo vivo del ledger (PARTIAL)
+    cur = dict(ctx.items.filter(pl.col("item_type").is_in(["API", "APC"])).select("item_id", "currency").iter_rows())
+    mixed = sh.setdefault("mixed", {})
+    for t, rows in sh.get("by_txn", {}).items():
+        if len({cur.get(i) for i, _ in rows if i}) > 1:
+            mixed[t] = rows
+            continue
+        p = _run_proposal(t, rows)
+        if p:
+            out[t] = p
     for t, rows in ctx.shared.get(NAME, {}).get("returns", {}).items():
         allocs = [Alloc(i, c, "RETURNED") for i, c in dict(((i, c) for i, c in rows if i)).items()]
         if allocs and t not in out:
@@ -491,7 +506,21 @@ def resolve_batch(ctx) -> dict[str, Proposal]:
 
 def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     """Reembolso del proveedor (POLICIES §5.9): abono bancario que liquida una nota de crédito de proveedor (APC)
-    abierta por su saldo exacto. Tercero por IBAN/nombre o por el número de factura/abono citado en el texto."""
+    abierta por su saldo exacto. Tercero por IBAN/nombre o por el número de factura/abono citado en el texto.
+
+    Cargo de un payment run con partidas en varias divisas (§3 FX_DIFFERENCE + §2 PARTIAL): exceptions.finalize no cuadra
+    importes con divisas mezcladas y pondría el saldo completo; aquí cada factura pagada por menos que su saldo vivo
+    (ledger) queda PARTIAL con lo aplicado ("PARTIAL/SHORT_DISPUTE se mantienen" en FX); el resto, normal."""
+    rows = ctx.shared.get(NAME, {}).get("mixed", {}).get(txn["bank_txn_id"])
+    if rows is not None:
+        p = _run_proposal(txn["bank_txn_id"], rows)
+        if p:
+            for a in p.allocs:
+                info = ledger.info.get(a.item_id)
+                op = ledger.open.get(a.item_id, 0)
+                if info and info[0] == "API" and 0 < a.amount_cents < op - _PARTIAL_TOL:
+                    a.exception = "PARTIAL"
+        return p
     amt = txn["amount_cents"]
     if amt <= 0:
         return None
