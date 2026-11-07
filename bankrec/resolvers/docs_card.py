@@ -4,6 +4,7 @@ Qué hace (POLICIES §2 y §5.3: una liquidación del adquirente liquida los ped
 la comisión que retiene el adquirente es contractual, no una diferencia):
 - abono bancario = suma de `net` de una liquidación (cuenta, fecha de liquidación..+5 días, importe exacto);
 - cada pedido (`order_number`) es el número de la factura ARI (normalizado), importe = `gross`.
+Además (docs_card_chq.py): depósitos de cheques/lockbox (§5.3) y contracargos de tarjeta -> RETURNED (§2).
 Entradas: ctx (bankrec.phase.Phase). Salida: dict bank_txn_id -> Proposal (resolve_batch).
 """
 from __future__ import annotations
@@ -14,6 +15,7 @@ import logging
 import polars as pl
 
 from bankrec import config, load
+from bankrec.resolvers import docs_card_chq
 from bankrec.contract import Alloc, Proposal
 
 NAME = "docs_card"
@@ -38,8 +40,16 @@ def _settlements(ctx) -> pl.DataFrame:
 
 
 def prepare(ctx) -> None:
-    sh: dict = {"by_txn": {}}
+    sh: dict = {"by_txn": {}, "cheques": {}, "returned": {}, "chargebacks": {}}
     ctx.shared[NAME] = sh
+    for key, fn in (("cheques", docs_card_chq.cheque_matches), ("returned", docs_card_chq.returned_cheques),
+                    ("chargebacks", docs_card_chq.chargebacks)):
+        try:
+            sh[key] = fn(ctx)
+        except Exception:
+            log.exception("docs_card: %s falló, se omite", key)
+    log.info("docs_card: %d depósitos de cheques, %d cheques devueltos, %d contracargos casados",
+             len(sh["cheques"]), len(sh["returned"]), len(sh["chargebacks"]))
     cs = _settlements(ctx)
     if cs.is_empty():
         return
@@ -83,4 +93,17 @@ def resolve_batch(ctx) -> dict[str, Proposal]:
         if allocs:
             out[t] = Proposal(t, allocs, confidence=0.99 if not miss else 0.8, resolver=NAME,
                               reason=f"liquidación tarjeta {len(rows)} pedidos, {miss} sin partida")
+    sh = ctx.shared.get(NAME, {})
+    for key, label in (("cheques", "depósito de cheques"), ("returned", "cheque devuelto"), ("chargebacks", "contracargo")):
+        for t, rows in sh.get(key, {}).items():
+            allocs, seen, miss = [], set(), 0
+            for item, cents, exc in rows:
+                if item is None or item in seen or cents <= 0:
+                    miss += 1
+                    continue
+                seen.add(item)
+                allocs.append(Alloc(item, cents, exc))
+            if allocs and t not in out:
+                out[t] = Proposal(t, allocs, confidence=0.9 if not miss else 0.6, resolver=NAME,
+                                  reason=f"{label} {len(rows)} filas, {miss} sin partida")
     return out
