@@ -17,8 +17,8 @@ de pago del cliente (payment_ref), a menudo cortada. Cómo:
    SHORT_WITHHOLDING al bruto; cualquier otro motivo (precio, daños, faltante, penalización, logística, marketing)
    -> SHORT_DISPUTE por lo pagado; abonos compensados -> sin excepción. Deducción SIN motivo impreso (layout nuevo):
    se deduce del importe (% de pronto pago de sus condiciones, % de retención en origen del país, o disputa).
-5. resolve() mira el ledger: una partida del aviso que otro movimiento anterior ya cerró (otro resolver la tomó por
-   error) no se propone (saldría DUPLICATE_PAYMENT, que en TRAIN no lleva ninguna fila de aviso).
+5. resolve() propone todas las filas con partida; si otro movimiento anterior ya cerró alguna (otro resolver la tomó
+   por error) se anota en la razón: el par es correcto y la excepción la decide exceptions.finalize.
 Publica ctx.shared[NAME]["claimed"] = {item_id: bank_txn_id} (partidas de avisos casados) para otros resolvers.
 Entradas: ctx (bankrec.phase.Phase). Salida: Proposal por movimiento casado (resolve).
 """
@@ -328,12 +328,12 @@ def resolve(txn: dict, ctx, ledger) -> Proposal | None:
     rows = sh.get("by_txn", {}).get(tid)
     if not rows:
         return None
-    # partida que un movimiento anterior ya cerró (otro resolver se la llevó): no se fuerza DUPLICATE_PAYMENT
-    live = [r for r in rows if r["item_id"] is not None and ledger.open.get(r["item_id"], 0) > 0]
-    al = _allocs(live, sh["booking"][tid], sh["info"])
+    al = _allocs(rows, sh["booking"][tid], sh["info"])
     if not al:
         return None
     miss = sum(1 for r in rows if r["item_id"] is None)
-    gone = len(rows) - miss - len(live)
+    # partidas que un movimiento anterior ya cerró (otro resolver se las llevó por error): el par es correcto y se
+    # propone igual; la excepción la decide exceptions.finalize (en TRAIN ninguna fila de aviso es DUPLICATE_PAYMENT)
+    gone = sum(1 for a in al if ledger.open.get(a.item_id, 0) <= 0)
     return Proposal(tid, al, confidence=0.97 if not (miss or gone) else 0.75, resolver=NAME,
-                    reason=f"aviso de remesa: {len(rows)} líneas, {miss} sin partida, {gone} ya cerradas")
+                    reason=f"aviso de remesa: {len(rows)} líneas, {miss} sin partida, {gone} ya cerradas por otro")
