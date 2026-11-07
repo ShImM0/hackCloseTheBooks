@@ -46,10 +46,12 @@ _NAME_MIN = 85                      # parecido de nombre mínimo (0-100), igual 
 _MARGIN = 5
 _FACTORY = {"ES00": ("ES00", "ES01", "ES02", "PT01")}   # §5.2: ES00 cobra/paga por sus filiales
 _RETURN_DAYS = 45                   # una transferencia rechazada vuelve en días o semanas
-# motivo ISO 20022 de una transferencia devuelta (AC01 cuenta errónea, AC04 cerrada, BE04, MD07...): sin el e2e en el
-# texto, el nombre del beneficiario solo basta con un motivo de devolución (si no, suele ser un reembolso del proveedor)
+# §2/§3 RETURNED: motivo ISO 20022 de una transferencia devuelta (AC01 cuenta errónea, AC04 cerrada, BE04, MD07...): sin
+# el e2e en el texto, el nombre del beneficiario solo basta con un motivo de devolución (si no, suele ser un reembolso del
+# proveedor, §4 SUPPLIER_REFUND o §5.9 APC)
 _RET_CODE = re.compile(r"\b(?:AC|AG|AM|BE|MD|MS|RC|RR|FF|DT|SL)\d{2}\b")
 _SLACK = 7                          # días entre la ejecución y el cargo en banco
+_CF_EXTRA = 3                       # confirming: beneficiarios de más en el pool que se pueden descartar por suma
 _CF_DAYS = 3                        # confirming: vencimiento en fin de semana/festivo -> cargo el siguiente día hábil
 _FX_BAND = 0.03                     # §3: el cambio del banco queda "well within the 3 % FX tolerance"
 
@@ -97,13 +99,15 @@ def _norm_names(s: pl.Series) -> pl.DataFrame:
 
 
 def _map_items(rows: pl.DataFrame, ctx) -> pl.DataFrame:
-    """Añade item_id a cada fila del run (nulo si no se puede decidir).
+    """Añade item_id a cada fila del run (nulo si no se puede decidir). POLICIES §5.5: referencias ruidosas, el
+    tercero sale del IBAN o del nombre.
 
     Candidatas: partidas AP con el mismo nº de documento normalizado y tipo (INVOICE->API, CREDIT_NOTE->APC). Se elige
     por orden lexicográfico: IBAN del beneficiario = IBAN del proveedor > nombre del beneficiario = nombre del proveedor
     (maestro o impreso en la factura; los runs de fuera de SEPA no traen IBAN y los nº de factura de proveedor se repiten
     entre proveedores) > importe (total o saldo == importe del documento) > divisa de la fila == divisa de la partida >
-    partida abierta > entidad de la cuenta. Empate en lo más alto: no se decide."""
+    saldo abierto >= importe del documento (un pago parcial, p. ej. al factor, no supera el saldo) > partida abierta >
+    entidad de la cuenta. Empate en lo más alto: no se decide."""
     sup_m = ctx.master("suppliers")
     sup = sup_m.select(pl.col("iban").alias("beneficiary_iban"), pl.col("supplier_id")).drop_nulls().unique()
     acc = ctx.master("bank_accounts").select(pl.col("account_id").alias("debtor_account_id"), pl.col("entity").alias("acc_entity"))
@@ -130,15 +134,16 @@ def _map_items(rows: pl.DataFrame, ctx) -> pl.DataFrame:
          .with_columns(pl.col("s_iban").fill_null(0), pl.col("s_name").fill_null(0),
                        ((pl.col("total_cents") == pl.col("doc_cents")) | (pl.col("open_cents") == pl.col("doc_cents"))).cast(pl.Int32).alias("s_amt"),
                        (pl.col("icur") == pl.col("rcur")).fill_null(False).cast(pl.Int32).alias("s_cur"),
+                       (pl.col("open_cents") >= pl.col("doc_cents")).fill_null(False).cast(pl.Int32).alias("s_fit"),
                        (pl.col("open_cents") > 0).cast(pl.Int32).alias("s_open"),
                        (pl.col("entity") == pl.col("acc_entity")).fill_null(False).cast(pl.Int32).alias("s_ent"))
-         .with_columns((pl.col("s_iban") * 32 + pl.col("s_name") * 16 + pl.col("s_amt") * 8 + pl.col("s_cur") * 4
-                        + pl.col("s_open") * 2 + pl.col("s_ent")).alias("score")))
+         .with_columns((pl.col("s_iban") * 64 + pl.col("s_name") * 32 + pl.col("s_amt") * 16 + pl.col("s_cur") * 8
+                        + pl.col("s_fit") * 4 + pl.col("s_open") * 2 + pl.col("s_ent")).alias("score")))
     best = c.group_by("rid").agg(pl.col("score").max().alias("best"), pl.len().alias("n"))
     c = (c.join(best, on="rid").filter(pl.col("score") == pl.col("best")))
     # empate real entre dos partidas con la misma puntuación: no se decide
-    uniq = c.group_by("rid").agg(pl.len().alias("k"), pl.col("item_id").first(), pl.col("due_date").first())
-    uniq = uniq.filter(pl.col("k") == 1).select("rid", "item_id", "due_date")
+    uniq = c.group_by("rid").agg(pl.len().alias("k"), pl.col("item_id").first(), pl.col("due_date").first(), pl.col("open_cents").first())
+    uniq = uniq.filter(pl.col("k") == 1).select("rid", "item_id", "due_date", "open_cents")
     return r.join(uniq, on="rid", how="left")
 
 
@@ -159,6 +164,8 @@ def prepare(ctx) -> None:
            .agg(pl.col("run_type").first(), pl.col("execution_date").first(),
                 pl.col("transfer_amount_cents").first(), pl.col("currency").first().alias("rcur"), pl.col("beneficiary").first(),
                 pl.col("due_date").max().alias("maturity"),
+                # beneficiario ya pagado: todas sus partidas conocidas y cerradas al inicio de la fase
+                (pl.col("open_cents").fill_null(1).max() == 0).alias("closed"),
                 pl.struct("item_id", "doc_cents").alias("docs"))
            .with_columns(pl.concat_str([pl.col("run_id"), pl.col("debtor_account_id")], separator="@").alias("rk")))
     debits = ctx.txns.filter(pl.col("amount_cents") < 0).select(
@@ -244,9 +251,11 @@ def prepare(ctx) -> None:
             band = pl.DataFrame(bands, schema={"rk": pl.String, "run_id": pl.String, "debtor_account_id": pl.String,
                                                "execution_date": pl.Date, "lo": pl.Int64, "hi": pl.Int64}, orient="row")
             rest = debits.filter(~pl.col("bank_txn_id").is_in(list(used)))
-            j = (band.join(rest, left_on="debtor_account_id", right_on="account_id")
+            # join ligero (sin textos) y el texto solo para los candidatos que cuadran en fecha e importe
+            j = (band.join(rest.select("bank_txn_id", "account_id", "booking_date", "amt"), left_on="debtor_account_id", right_on="account_id")
                  .with_columns((pl.col("booking_date") - pl.col("execution_date")).dt.total_days().alias("lag"))
                  .filter(pl.col("lag").is_between(0, _SLACK) & pl.col("amt").is_between(pl.col("lo"), pl.col("hi")))
+                 .join(rest.select("bank_txn_id", "tn"), on="bank_txn_id")
                  .with_columns(pl.col("tn").str.contains(pl.col("run_id"), literal=True).alias("cite")))
             j = (j.join(j.group_by("rk").len("n_run"), on="rk").join(j.group_by("bank_txn_id").len("n_txn"), on="bank_txn_id")
                  .sort(["cite", "lag", "bank_txn_id"], descending=[True, False, False]))
@@ -262,14 +271,17 @@ def prepare(ctx) -> None:
     #       beneficiarios aún libres cuyo vencimiento (máx. de sus documentos) cae entre el cargo anterior del mismo
     #       run y este (fin de semana o festivo: se carga el siguiente día hábil; sin cargo anterior, _CF_DAYS días).
     #       Si son exactamente N y suman el cargo, son esos (vale con runs de > 28 beneficiarios, donde no se intenta
-    #       el subconjunto); si son menos de N, el resto sale de vencimientos atrasados (subconjunto exacto).
+    #       el subconjunto; también con todo lo vencido, para el primer cargo del run); si sobran ≤ _CF_EXTRA, se quitan
+    #       los que suman el exceso (solución única); si faltan, el resto sale de vencimientos atrasados (subconjunto
+    #       exacto). Los beneficiarios con todas sus partidas cerradas al inicio de la fase ya se pagaron: no entran.
     #    b) el resto: N beneficiarios cuyo importe suma el cargo (subconjunto), ampliando la ventana de vencimientos.
     #    Cada beneficiario se usa en un solo cargo: en b) se resuelven antes los cargos con menos beneficiarios.
     cf = grp.filter(pl.col("run_type") == "confirming")
     if cf.height:
         byrun: dict[tuple, list] = {}
-        for rid, acc, mat, amt, docs in cf.select("run_id", "debtor_account_id", "maturity", "transfer_amount_cents", "docs").iter_rows():
-            byrun.setdefault((rid, acc), []).append([mat, amt, docs, False])
+        for rid, acc, mat, amt, docs, closed in cf.select("run_id", "debtor_account_id", "maturity", "transfer_amount_cents", "docs",
+                                                          "closed").iter_rows():
+            byrun.setdefault((rid, acc), []).append([mat, amt, docs, bool(closed)])
         rest = debits.filter(~pl.col("bank_txn_id").is_in(list(used)) & pl.col("txt").str.contains(r"CF\d{9,}"))
         todo = []
         for t, acc, d, amt, txt in rest.select("bank_txn_id", "account_id", "booking_date", "amt", "txt").iter_rows():
@@ -286,9 +298,14 @@ def prepare(ctx) -> None:
             prev = max((x for x in dates[key] if x < d), default=d - dt.timedelta(days=_CF_DAYS))
             free = [g for g in byrun[key] if not g[3]]
             win = [g for g in free if g[0] is not None and prev < g[0] <= d]
+            due = [g for g in free if g[0] is not None and g[0] <= d]     # primer cargo del run: paga todo lo vencido
             sel = None
             if len(win) == n and sum(g[1] for g in win) == amt:
                 sel = win
+            elif len(due) == n and sum(g[1] for g in due) == amt:
+                sel = due
+            elif (x := _drop_extra(win, n, amt) or _drop_extra(due, n, amt)):
+                sel = x
             elif 0 < len(win) < n and sum(g[1] for g in win) < amt:
                 # vencimientos atrasados (beneficiarios de cargos anteriores que no se pagaron entonces)
                 older = [g for g in free if g[0] is None or g[0] <= prev]
@@ -345,6 +362,36 @@ def _name_hit(txt: str | None, name: str | None) -> int:
     toks = [w for w in re.sub(r"[^A-Z0-9 ]", " ", (name or "").upper()).split() if len(w) >= 4]
     up = (txt or "").upper()
     return int(any(w in up for w in toks[:2]))
+
+
+def _drop_extra(pool: list, n: int, amt: int) -> list | None:
+    """Confirming (POLICIES §5.3): pool con unos pocos beneficiarios de más (vencidos que se pagan en otro cargo):
+    quita los `len(pool) - n` (≤ _CF_EXTRA) cuya suma es el exceso sobre el cargo. Solo si la solución es única."""
+    k = len(pool) - n
+    if not n or not 1 <= k <= _CF_EXTRA:
+        return None
+    excess = sum(g[1] for g in pool) - amt
+    if excess <= 0:
+        return None
+    vals = [g[1] for g in pool]
+    pos: dict[int, list[int]] = {}
+    for i, v in enumerate(vals):
+        pos.setdefault(v, []).append(i)
+    sols: set[tuple] = set()
+    if k == 1:
+        sols = {(i,) for i in pos.get(excess, [])}
+    for i in range(len(vals) if k > 1 else 0):       # k = 2: pares por suma; k = 3: O(n²) con índice por importe
+        if k == 2:
+            sols |= {(i, j) for j in pos.get(excess - vals[i], []) if j > i}
+        else:
+            for j in range(i + 1, len(vals)):
+                sols |= {(i, j, m) for m in pos.get(excess - vals[i] - vals[j], []) if m > j}
+        if len(sols) > 1:
+            return None
+    if len(sols) != 1:
+        return None
+    drop = set(next(iter(sols)))
+    return [g for i, g in enumerate(pool) if i not in drop]
 
 
 def _subset(pool: list, n: int, amt: int, booking: dt.date) -> list | None:
