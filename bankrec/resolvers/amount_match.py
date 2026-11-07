@@ -166,7 +166,11 @@ def _exact(txn: dict, ctx, ledger) -> Proposal | None:
     pick, why = mine[0], "único" if len(mine) == 1 else "FIFO"
     if len(mine) > 1:
         from bankrec import refs
-        m = pick_month(mine, ledger, refs.months(refs.joined(refs.haystack(txn))))
+        # sin el nombre del ordenante ("MAR LDA" no es marzo) y sin el mes del cobro: el servicio de un mes se
+        # factura a primeros del siguiente, así que nunca coincide con el mes en que se cobra (2021-25: 1,7 % de los
+        # meses citados son el de servicio; 83-100 % son el del cobro)
+        mons = refs.months(refs.joined(refs.haystack({**txn, "counterparty_name": None}))) - {txn["booking_date"].month}
+        m = pick_month(mine, ledger, mons)
         if m:
             pick, why = m, "mes de servicio"
     # el texto cita (≥ 90) otra factura abierta del mismo tercero: no es esta (la resolverá by_ref)
