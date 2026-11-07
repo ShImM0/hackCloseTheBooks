@@ -22,7 +22,7 @@ from collections import defaultdict
 
 from bankrec import parties
 from bankrec.contract import Alloc, Proposal
-from bankrec.exceptions import PARTIAL_FRACS, DISPUTE_FRACS, WH_BPS, _plan, _state
+from bankrec.exceptions import cross_border, PARTIAL_FRACS, DISPUTE_FRACS, WH_BPS, _plan, _state
 from bankrec.resolvers.amount_match import MARGIN, NAME_MIN
 
 NAME = "short_cash"
@@ -129,6 +129,7 @@ def _shapes(txn, ctx, ledger, pid) -> tuple[str, str, int] | None:
             continue
         live.append((iid, issue, cur, total, ledger.open.get(iid, 0), c))
     hits = {k: [] for k in range(6)}
+    xb = cross_border(txn)
     openl = [x for x in live if x[4] > 0]
     for iid, issue, cur, total, o, c in live:
         if o > 0:
@@ -140,7 +141,7 @@ def _shapes(txn, ctx, ledger, pid) -> tuple[str, str, int] | None:
             if c < o - 1 and any(abs(c - round(o * fr)) <= 1 for fr in PARTIAL_SET):
                 hits[3].append((iid, "parcial", c))
             fee = o - c
-            if 900 <= fee <= min(0.02 * o, 8000) and cur == tcur:
+            if xb and 900 <= fee <= min(0.02 * o, 8000) and cur == tcur:
                 hits[4].append((iid, "gastos", c))
         elif abs(c - total) <= 1 and (date - issue).days <= 240:
             hits[1].append((iid, "duplicado", c))

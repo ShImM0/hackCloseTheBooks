@@ -48,6 +48,12 @@ FX_BAND = (0.965, 1.02)          # efectivo/esperado de una liquidación total e
 INVOICES = ("ARI", "API")
 
 
+def cross_border(txn: dict) -> bool:
+    """Cobro transfronterizo de fuera de SEPA (POLICIES §3 SHORT_BANK_CHARGES): familia ISO 20022 XBCT o texto
+    'TRANSFER. EN DIV.'. Los cobros domésticos (SEPA ESCT, ACH, transferencias nacionales) nunca llevan gastos."""
+    return "XBCT" in (txn.get("bank_code") or "") or "EN DIV" in (txn.get("text") or "").upper()
+
+
 # ----------------------------------------------------------------------------------------------- índices
 
 class _State:
@@ -298,7 +304,7 @@ def _age(row, date) -> int | None:
     return (date - issue).days if issue is not None else None
 
 
-def _explain_explicit(row, open_c, amt, date, st, tol) -> Alloc:
+def _explain_explicit(row, open_c, amt, date, st, tol, xb=True) -> Alloc:
     """Fila con importe explícito del resolver menor que el saldo: ¿pronto pago, retención en origen, plazo del PDF o
     parcial? Devuelve el Alloc con su excepción e importe (completo si la partida queda liquidada)."""
     a, info, _ = row
@@ -320,7 +326,7 @@ def _explain_explicit(row, open_c, amt, date, st, tol) -> Alloc:
                 return Alloc(a.item_id, open_c, "SHORT_WITHHOLDING")
     f = st.item_facts(a.item_id)
     lbl = _fact_label(f, amt, open_c, tol, _age(row, date)) if f else None
-    if lbl is None and not any(abs(amt - round(open_c * fr)) <= 1 for fr in PARTIAL_FRACS + DISPUTE_FRACS + [0.95, 0.98, 0.99]):
+    if xb and lbl is None and not any(abs(amt - round(open_c * fr)) <= 1 for fr in PARTIAL_FRACS + DISPUTE_FRACS + [0.95, 0.98, 0.99]):
         fee = open_c - amt
         if 0 < fee <= BC_MAX_PCT * open_c and st.convert(fee, info[3], "EUR", date) <= BC_MAX_EUR * 100:
             return Alloc(a.item_id, open_c, "SHORT_BANK_CHARGES")
@@ -332,6 +338,9 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
     out = [Alloc(a.item_id, a.amount_cents, "") for a, _, _ in rows]
     date = txn["booking_date"]
     cash = _item_cash(txn, st, icur) - offset
+    # tarjeta web y recibos domiciliados: nunca DUPLICATE_PAYMENT (0 de 713 k filas ar_dd_batch en TRAIN)
+    if inv_idx and all(rows[i][1][1] in st.noexc for i in inv_idx):
+        return out
     # partidas ya cerradas -> DUPLICATE_PAYMENT; el resto entra en el cálculo
     live = []
     for i in inv_idx:
@@ -364,7 +373,7 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
             and any(amts[i] < opens[i] - tol for i in live) and all(amts[i] <= opens[i] + tol for i in live)):
         for i in live:
             if amts[i] < opens[i] - tol:
-                out[i] = _explain_explicit(rows[i], opens[i], amts[i], date, st, tol)
+                out[i] = _explain_explicit(rows[i], opens[i], amts[i], date, st, tol, cross_border(txn))
         return out
 
     if fx:
@@ -448,7 +457,7 @@ def _normal(rows, inv_idx, cn_idx, txn, st, fx, tcur, icur, offset=0):
                     out[i] = Alloc(rows[i][0].item_id, opens[i], "SHORT_WITHHOLDING")
                 return out
     # 4. gastos bancarios del banco intermediario: una sola factura, ≤ 60 EUR y ≤ 2 %
-    if len(live) == 1 and not live_cn:
+    if len(live) == 1 and not live_cn and cross_border(txn):
         i = live[0]
         eur = st.convert(delta, icur, "EUR", date)
         if 0 < delta <= BC_MAX_PCT * opens[i] and eur <= BC_MAX_EUR * 100:
