@@ -107,7 +107,25 @@ KIND = {'AR_INVOICE': 'ARI', 'AR_CREDIT_NOTE': 'ARC', 'AP_INVOICE': 'API', 'AP_C
 def web_txn(e):
     b = dict(e['bank'])
     b['amount_cents'] = round(float(b['amount']) * 100)
+    b['booking_date'] = date.fromisoformat(b['booking_date'])
     return b
+
+
+CUST_SCHEMA = {'customer_id': pl.String, 'entity': pl.String, 'name': pl.String, 'trade_name': pl.String,
+               'iban': pl.String, 'parent_customer_id': pl.String}
+SUP_SCHEMA = {'supplier_id': pl.String, 'entity': pl.String, 'name': pl.String, 'iban': pl.String}
+ITEM_SCHEMA = {'item_id': pl.String, 'item_type': pl.String, 'entity': pl.String, 'party_id': pl.String,
+               'party_name': pl.String, 'document_number': pl.String, 'issue_date': pl.Date, 'open_cents': pl.Int64}
+
+
+def unmatched_ctx(items, customers=(), suppliers=()):
+    """Contexto real en miniatura: maestros + partidas, con parties.prepare y nonitem_unmatched.prepare de verdad."""
+    masters = {'customers': pl.DataFrame(list(customers), schema=CUST_SCHEMA),
+               'suppliers': pl.DataFrame(list(suppliers), schema=SUP_SCHEMA)}
+    ctx = SimpleNamespace(items=pl.DataFrame(list(items), schema=ITEM_SCHEMA), shared={}, master=masters.__getitem__)
+    nonitem_unmatched.prepare(ctx)
+    open_ids = set(ctx.items.filter(pl.col('open_cents') > 0)['item_id'])
+    return ctx, SimpleNamespace(is_open=lambda iid: iid in open_ids)
 
 
 def expected(e):
@@ -130,19 +148,22 @@ class WebExamples(unittest.TestCase):
                     self.assertIsNone(got)
 
     def ctx_for(self, e):
-        """Contexto mínimo: partidas candidatas del ejemplo abiertas y nombres impresos como único maestro."""
-        items = pl.DataFrame([{'item_id': i['item_id'], 'item_type': KIND[i['kind']], 'entity': i['entity'],
-                               'party_id': 'P-' + i['party'], 'document_number': i['number'],
-                               'open_cents': abs(round(float(i['total']) * 100))} for i in e['items']],
-                             schema={'item_id': pl.String, 'item_type': pl.String, 'entity': pl.String,
-                                     'party_id': pl.String, 'document_number': pl.String, 'open_cents': pl.Int64})
-        names = {}
+        """Partidas candidatas del ejemplo abiertas; sus terceros como únicos clientes/proveedores del maestro."""
+        ids, items, cust, sup = {}, [], [], []
         for i in e['items']:
-            names.setdefault('P-' + i['party'], set()).add(parties.norm_name(i['party']))
-        ctx = SimpleNamespace(items=items, shared={'parties': {'names': {k: list(v) for k, v in names.items()}, 'iban': {}}})
-        nonitem_unmatched.prepare(ctx)
-        ledger = SimpleNamespace(is_open=lambda iid: iid in set(items['item_id']))
-        return ctx, ledger
+            typ = KIND[i['kind']]
+            side = 'C' if typ.startswith('AR') else 'S'
+            if (side, i['party']) not in ids:
+                ids[(side, i['party'])] = pid = f"{side}{i['entity']}{len(ids):06d}"
+                (cust if side == 'C' else sup).append(
+                    {'customer_id': pid, 'entity': i['entity'], 'name': i['party'], 'trade_name': None, 'iban': None,
+                     'parent_customer_id': None} if side == 'C' else
+                    {'supplier_id': pid, 'entity': i['entity'], 'name': i['party'], 'iban': None})
+            items.append({'item_id': i['item_id'], 'item_type': typ, 'entity': i['entity'],
+                          'party_id': ids[(side, i['party'])], 'party_name': i['party'], 'document_number': i['number'],
+                          'issue_date': date.fromisoformat(i['issue_date']),
+                          'open_cents': abs(round(float(i['total']) * 100))})
+        return unmatched_ctx(items, cust, sup)
 
     def test_unmatched_keeps_unidentified_only_without_open_items(self):
         seen = set()
@@ -166,6 +187,105 @@ class WebExamples(unittest.TestCase):
         e = next(e for e in WEB if e['segment'] == 'nonitem_bank_fees')
         ctx, ledger = self.ctx_for(e)
         self.assertIsNone(nonitem_unmatched.resolve(web_txn(e), ctx, ledger))
+
+
+def cand(**kw):
+    c = {'pid': 'CES01000001', 'sc': 100, 'w': 2, 'emp': True, 'ab': 1, 'aa': 1, 'n': 'FERRETERIA PUIG', 'cpr': None}
+    c.update(kw)
+    return c
+
+
+def feats(**kw):
+    f = {'lote': '', 'reemb': False, 'cp': False, 'iban': [], 'ref': None, 'cli': [], 'pro': []}
+    f.update(kw)
+    return f
+
+
+class UnmatchedDecisions(unittest.TestCase):
+    """Reglas de nonitem_unmatched sobre señales sintéticas (nombres e ids ficticios)."""
+
+    def decide(self, credit=True, **kw):
+        return nonitem_unmatched.decide(feats(**kw), credit)
+
+    def test_unidentified_only_without_any_tie_and_always_both_fields(self):
+        cat, exc, why = self.decide()
+        self.assertEqual((cat, exc), ('UNIDENTIFIED', 'UNIDENTIFIED'))
+        self.assertIn('POLICIES §3', why)
+
+    def test_company_two_words_identifies_but_person_needs_three(self):
+        self.assertEqual(self.decide(cli=[cand()])[:2], (nonitem_unmatched.PENDING, ''))
+        cat, exc, why = self.decide(cli=[cand(emp=False, n='JESSICA WHITE')])
+        self.assertEqual((cat, exc), ('UNIDENTIFIED', 'UNIDENTIFIED'))
+        self.assertIn('particular de 2 palabras', why)
+        self.assertEqual(self.decide(cli=[cand(emp=False, w=3, n='RAQUEL GOMEZ GARRIDO')])[0], nonitem_unmatched.PENDING)
+
+    def test_counterparty_name_must_match_whole_name(self):
+        cat, _, why = self.decide(cli=[cand(cpr=73, n='POOL BENNETT')])
+        self.assertEqual(cat, 'UNIDENTIFIED')
+        self.assertIn('la contraparte es otro nombre', why)
+        self.assertEqual(self.decide(cli=[cand(cpr=100)])[0], nonitem_unmatched.PENDING)
+
+    def test_name_without_open_items_or_weak_match_is_not_enough(self):
+        self.assertIn('sin partidas abiertas', self.decide(cli=[cand(aa=0, ab=0)])[2])
+        self.assertIn('parecido 85', self.decide(cli=[cand(sc=85)])[2])
+
+    def test_batch_iban_and_cited_number_tie_to_items(self):
+        self.assertEqual(self.decide(lote='REMESA')[0], nonitem_unmatched.PENDING)
+        self.assertEqual(self.decide(iban=[{'pid': 'CES01000001', 'ab': 1, 'aa': 2}])[0], nonitem_unmatched.PENDING)
+        self.assertEqual(self.decide(iban=[{'pid': 'CES01000001', 'ab': 0, 'aa': 0}])[0], 'UNIDENTIFIED')
+        ref = {'iid': 'ARI-2031-0000001', 'rs': 100, 'antes': True, 'pf': 0, 't': 'ARI'}
+        self.assertEqual(self.decide(ref=ref)[0], nonitem_unmatched.PENDING)
+
+    def test_supplier_refund_only_without_open_credit_note(self):
+        sup = cand(pid='SES01000001', aa=0, ab=0, api=True, n='QUIMICA NUEVA')
+        self.assertEqual(self.decide(pro=[sup])[:2], ('SUPPLIER_REFUND', ''))
+        self.assertEqual(self.decide(reemb=True, pro=[{**sup, 'api': False}])[0], 'SUPPLIER_REFUND')
+        self.assertEqual(self.decide(pro=[{**sup, 'api': False}])[0], 'UNIDENTIFIED')
+        # con abono APC abierto el reembolso liquida la APC: partida probable, no categoría
+        self.assertEqual(self.decide(reemb=True, pro=[{**sup, 'aa': 1, 'ab': 1}])[0], nonitem_unmatched.PENDING)
+
+    def test_customer_refund_debits(self):
+        self.assertEqual(self.decide(False, cli=[cand(aa=0, ab=0)])[:2], ('CUSTOMER_REFUND', ''))
+        self.assertIsNone(self.decide(False, cli=[cand(aa=1)]))                       # abono ARC abierto: partida
+        self.assertIsNone(self.decide(False, cli=[cand(aa=0)], pro=[cand(pid='SES01000002')]))  # también proveedor
+        self.assertIsNone(self.decide(False))
+
+    def test_real_prepare_and_resolve_with_two_word_company(self):
+        items = [{'item_id': 'ARI-2031-0000001', 'item_type': 'ARI', 'entity': 'XX01', 'party_id': 'CXX01000001',
+                  'party_name': 'Ferretería Nube S.L.', 'document_number': 'ZZ31-0000001',
+                  'issue_date': date(2031, 1, 5), 'open_cents': 12345}]
+        cust = [{'customer_id': 'CXX01000001', 'entity': 'XX01', 'name': 'Ferretería Nube S.L.', 'trade_name': None,
+                 'iban': None, 'parent_customer_id': None}]
+        ctx, ledger = unmatched_ctx(items, cust)
+        t = dict(bank_txn_id='BT-2031-0000001', entity='XX01', text='TRANSFERENCIA DE FERRETERIA NUBE S.L.',
+                 amount_cents=50000, booking_date=date(2031, 2, 1), ref2='', remittance_info='', counterparty_name='')
+        p = nonitem_unmatched.resolve(t, ctx, ledger)
+        self.assertEqual((p.category, p.exception), (nonitem_unmatched.PENDING, ''))
+        self.assertTrue(json.loads(p.reason.split(' | ', 1)[1])['cli'][0]['emp'])
+        t2 = {**t, 'text': 'TRANSFERENCIA DE MARIA SOL NUEVA', 'bank_txn_id': 'BT-2031-0000002'}
+        p2 = nonitem_unmatched.resolve(t2, ctx, ledger)
+        self.assertEqual((p2.category, p2.exception), ('UNIDENTIFIED', 'UNIDENTIFIED'))
+
+    def test_company_detection(self):
+        for raw, exp in [('Porto Alvor Jardins S.A.', True), ('Pool & Spa Bennett Hermanos Co.', True),
+                         ('Plastics Wattle Creek Pty Ltd', True), ('Raquel Gómez Garrido', False), ('Jessica White', False)]:
+            self.assertEqual(nonitem_unmatched.is_company(raw), exp, raw)
+
+
+class Registro(unittest.TestCase):
+    def test_unidentified_and_category_sign_warnings(self):
+        from bankrec.validate import registro_warnings
+        row = lambda t, cat, exc='': {'bank_txn_id': t, 'item_id': '', 'amount': '', 'category': cat, 'exception': exc}
+        signs = {'A': 1, 'B': -1, 'C': -1, 'D': 1, 'E': 1}
+        ok = [row('A', 'UNIDENTIFIED', 'UNIDENTIFIED'), row('B', 'PAYROLL'), row('D', 'SUPPLIER_REFUND')]
+        self.assertEqual(registro_warnings(ok, signs), [])
+        bad = registro_warnings([row('A', 'UNIDENTIFIED'), row('C', 'UNIDENTIFIED', 'UNIDENTIFIED'),
+                                 row('D', 'PAYROLL'), row('E', 'BANK_FEES'), row('B', 'CUSTOMER_ADVANCE')], signs)
+        self.assertEqual(len(bad), 3)
+        self.assertIn('1 filas con UNIDENTIFIED solo en category', bad[0])
+        self.assertIn('1 cargos marcados UNIDENTIFIED', bad[1])
+        self.assertIn('PAYROLL en abono 1', bad[2])
+        self.assertIn('CUSTOMER_ADVANCE en cargo 1', bad[2])
 
 
 class Validation(unittest.TestCase):

@@ -5,7 +5,10 @@ Añade comprobaciones propias:
 - ERROR: no cubre el 100 % de los movimientos de la fase (lo que falta puntúa como fallo);
 - ERROR: tamaño > 60 MB o > 3 M filas (ya lo hace el scorer);
 - AVISO: item_id que no existe en las partidas conocidas (el servidor no lo rechaza, pero es un FP seguro);
-- AVISO: importes sin exactamente 2 decimales (estilo de la casa).
+- AVISO: importes sin exactamente 2 decimales (estilo de la casa);
+- AVISO (con check_known_items, como la CLI y submit.py): registro de UNIDENTIFIED y categorías.
+  UNIDENTIFIED va siempre en category y exception a la vez y solo en cobros (POLICIES §3); cada categoría con el
+  signo de su definición (categories.csv, POLICIES §4: PAYROLL es un cargo, SUPPLIER_REFUND un abono…).
 
 Uso: uv run python -m bankrec.validate out/live/submission.csv.gz --phase live
 """
@@ -54,6 +57,51 @@ def submission_rows(data: bytes) -> list[dict[str, str]]:
     header = [h.strip().lower() for h in next(csv.reader([first], delimiter=delim))]
     return [{k: (row[i] if i < len(row) else "").strip() for i, k in enumerate(header)}
             for row in csv.reader(stream, delimiter=delim) if row and any(c.strip() for c in row)]
+
+
+# Signo de cada categoría según su definición (categories.csv, POLICIES §4). En el golden de 2023 y 2024 se cumple
+# en el 100 % de las filas; las demás (CASH_POOL, INTERCOMPANY, INTERNAL_TRANSFER, FX_DEAL, BANK_REVERSAL) van en
+# ambos sentidos. Categorías nuevas de masters_final no se comprueban.
+CREDIT_ONLY = frozenset({"CUSTOMER_ADVANCE", "INTEREST_INCOME", "LOAN_DRAWDOWN", "SUPPLIER_REFUND", "TAX_REFUND",
+                         "UNIDENTIFIED"})
+DEBIT_ONLY = frozenset({"BANK_FEES", "CARD_EXPENSES", "CUSTOMER_REFUND", "INSURANCE", "INTEREST_EXPENSE", "LEASING",
+                        "LOAN_REPAYMENT", "PAYROLL", "SOCIAL_SECURITY", "TAX_PAYMENT"})
+
+
+def txn_signs(phase: str, ids) -> dict[str, int]:
+    """bank_txn_id -> signo del importe (+1 abono, -1 cargo) de los movimientos de la fase."""
+    t = load.table(config.PHASES[phase][0], "bank_transactions")
+    if t is None:   # sin movimientos (pruebas, fase aún vacía): no se comprueba el signo
+        return {}
+    t = t.filter(pl.col("bank_txn_id").is_in(list(ids))).select("bank_txn_id", "amount_cents")
+    return {a: (1 if c > 0 else -1) for a, c in t.iter_rows()}
+
+
+def registro_warnings(rows: list[dict[str, str]], signs: dict[str, int]) -> list[str]:
+    """Avisos de registro de las filas sin partida: UNIDENTIFIED completo y solo en cobros; signo de categoría."""
+    half = debit_unid = 0
+    wrong: dict[str, int] = {}
+    for r in rows:
+        if r["item_id"]:
+            continue
+        cat, exc = r["category"], r["exception"]
+        if (cat == "UNIDENTIFIED") != (exc == "UNIDENTIFIED"):
+            half += 1
+        sign = signs.get(r["bank_txn_id"], 0)
+        if cat == "UNIDENTIFIED" and sign < 0:
+            debit_unid += 1
+        elif (cat in CREDIT_ONLY and sign < 0) or (cat in DEBIT_ONLY and sign > 0):
+            key = f"{cat} en {'cargo' if sign < 0 else 'abono'}"
+            wrong[key] = wrong.get(key, 0) + 1
+    out = []
+    if half:
+        out.append(f"{half} filas con UNIDENTIFIED solo en category o solo en exception (POLICIES §3: van juntas)")
+    if debit_unid:
+        out.append(f"{debit_unid} cargos marcados UNIDENTIFIED (UNIDENTIFIED es un cobro sin partida, POLICIES §3)")
+    if wrong:
+        out.append("categorías con signo contrario a su definición: "
+                   + ", ".join(f"{k} {n}" for k, n in sorted(wrong.items(), key=lambda x: -x[1])))
+    return out
 
 
 def unknown_item_ids(phase: str, submitted: set[str]) -> set[str]:
@@ -106,6 +154,8 @@ def validate(path: Path, phase: str, txn_ids: list[str] | None = None, known_ite
             warnings.append(f"{bad_dec} importes sin 2 decimales")
         if unknown:
             warnings.append(f"{unknown} item_id desconocidos (FP seguros)")
+        if check_known_items:
+            warnings.extend(registro_warnings(rd, txn_signs(phase, ids)))
     return errors, warnings
 
 

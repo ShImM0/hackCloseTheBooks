@@ -2,7 +2,7 @@
 
 ## Versión actual (2026-11-07, tarde)
 
-SHA-256 de nonitem.py: `891e5fbee12e59acc164ce51d45a693fcf09ec57699d80af7ccca465bdb6961f`.
+SHA-256 de nonitem.py: `143a44d069257f63834ac405fcbc4257cacb408f053061eafc45a154ca4df66f` (13:40: + SUPPLIER_REFUND por pago duplicado).
 `uv run python scripts/p4_category_audit.py --years 2023 2024` (golden unido después de resolver).
 
 Método: plantillas de texto de las categorías no detectadas en 2023; cada patrón nuevo se aceptó solo si en
@@ -11,15 +11,37 @@ REEMBOLSO se descartó (mezcla partidas APC y SUPPLIER_REFUND). Después se conf
 
 | año | movimientos | propuestas | correctas | pagos de partidas interceptados | precisión | recall sin partida |
 |---|---:|---:|---:|---:|---:|---:|
-| 2023 | 373702 | 27045 | 27045 | 0 | 100.00% | 75.32% |
-| 2024 | 387139 | 27389 | 27389 | 0 | 100.00% | 74.84% |
+| 2023 | 373702 | 27082 | 27082 | 0 | 100.00% | 75.42% |
+| 2024 | 387139 | 27424 | 27424 | 0 | 100.00% | 74.94% |
 
 Sin contar UNIDENTIFIED (no es de nonitem): 54.434 de 54.668 = 99,57 % de recall. Cambios de recall: CASH_POOL
 25,7 → 100 %, FX_DEAL 62,8 → 100 %, LOAN_REPAYMENT 42,4 → 100 %, LOAN_DRAWDOWN 0 → 100 %, INSURANCE 69,1 → 100 %,
 TAX_PAYMENT 76,7 → 100 %, SOCIAL_SECURITY 93,4 → 100 %, INTERCOMPANY 96,8 → 100 %, BANK_FEES 99,5 → 100 %.
-Pendientes: SUPPLIER_REFUND 32,9 % (se confunde con reembolsos de abonos APC, que son partida) y CUSTOMER_REFUND 95 %.
+SUPPLIER_REFUND 32,9 → 62,2 % con «PAGO DUPLICADO / PAGO DOBLE / DUPLICATE PAYMENT» en abonos (153 de 153). Lo que falta («REEMBOLSO + número», que se confunde con reembolsos de abonos APC, partida) y CUSTOMER_REFUND (95 %) lo decide `nonitem_unmatched` con el tercero (sección siguiente).
 
 Val completo (2025-01..06): 59,68 antes de estos cambios; resultados en `docs/SCOREBOARD.md`.
+
+## `nonitem_unmatched`: comprobación en año anterior (2026-11-07, 13:50)
+
+Mismas funciones de producción (`features`/`decide`) sobre cobros y cargos de 2024 y de 2025-H1, con el estado de
+cada partida en la fecha del movimiento reconstruido desde el golden (emitida ≤ día ≤ fecha en que queda saldada):
+solo mide, el golden no entra en el resolver. «Evidencia» = el cobro NO se marcaría UNIDENTIFIED.
+
+| periodo | grupo | n | evidencia regla vieja | regla nueva | → SUPPLIER_REFUND | → CUSTOMER_REFUND |
+|---|---|---:|---:|---:|---:|---:|
+| 2024 | UNIDENTIFIED reales (cobros) | 9.100 | 7,9 % | 12,9 % | 0 | 0 |
+| 2024 | pagos de factura de cliente (muestra) | 12.000 | 76,5 % | 92,5 % | 0 | 0 |
+| 2024 | SUPPLIER_REFUND que nonitem no ve | 37 | | | 27 | 0 |
+| 2024 | CUSTOMER_REFUND que nonitem no ve | 33 | | | 0 | 21 |
+| 2024 | pagos a proveedor (cargos, muestra) | 12.000 | | | 0 | 0 |
+| 2025-H1 | UNIDENTIFIED reales (cobros) | 4.585 | 9,1 % | 14,7 % | 0 | 0 |
+| 2025-H1 | pagos de factura de cliente (muestra) | 12.000 | 76,8 % | 92,2 % | 0 | 0 |
+| 2025-H1 | SUPPLIER_REFUND que nonitem no ve | 22 | | | 18 | 0 |
+| 2025-H1 | CUSTOMER_REFUND que nonitem no ve | 21 | | | 0 | 12 |
+| 2025-H1 | pagos a proveedor (cargos, muestra) | 12.000 | | | 0 | 0 |
+
+El intercambio es el mismo en ambos años (+16 puntos de pagos con partida cubiertos por +5 de UNIDENTIFIED reales
+degradados) y las dos categorías nuevas no producen ningún falso en ninguno de los dos: la regla no depende de val.
 
 ## Versión anterior (congelada)
 
