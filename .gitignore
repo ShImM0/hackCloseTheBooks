@@ -1,0 +1,12 @@
+# Datos y salidas (nunca al repo)
+data/
+out/
+*.parquet
+.env
+bankrec.local.toml
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+._*
+.claude/settings.local.json
