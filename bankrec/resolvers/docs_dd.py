@@ -40,7 +40,7 @@ def _receipts(ctx) -> pl.DataFrame:
             parts.append(df)
     if not parts:
         return pl.DataFrame()
-    return pl.concat(parts, how="vertical_relaxed").unique(["batch_id", "end_to_end_id"], keep="last")
+    return pl.concat(parts, how="vertical_relaxed").unique(["batch_id", "end_to_end_id"], keep="last", maintain_order=True)
 
 
 def _map_items(rec: pl.DataFrame, ctx) -> pl.DataFrame:
